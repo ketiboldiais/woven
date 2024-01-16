@@ -547,10 +547,10 @@ function lexicalAnalysis(code: string) {
       case "nand":
         return newToken(TOKEN.NAND);
     }
-		// If we make it to this line, then
-		// the lexeme thus far is a user
-		// symbol (e.g., a variable name, 
-		// a function name, etc.)
+    // If we make it to this line, then
+    // the lexeme thus far is a user
+    // symbol (e.g., a variable name,
+    // a function name, etc.)
     return newToken(TOKEN.SYMBOL);
   };
 
@@ -624,6 +624,16 @@ function lexicalAnalysis(code: string) {
       // keep moving forward
       tick();
     }
+    // Get the lexeme thus far
+    const lexeme = slice();
+
+    // Remove the '0b' from the lexeme
+    const binaryDigitString = lexeme.replace("0b", "");
+
+    // Convert the modified string into an integer
+    const numericValue = Number.parseInt(binaryDigitString, 2);
+
+    return newToken(TOKEN.INT).literal(numericValue);
   };
 
   /** Scans the provided code for a token. */

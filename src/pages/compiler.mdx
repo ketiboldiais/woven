@@ -1,0 +1,51 @@
+# Compiler
+
+This page documents key features of Woven’s compiler.
+
+## Tokens
+
+| `TOKEN`         | Lexeme                | Type               |
+| --------------- | --------------------- | ------------------ |
+| `LEFT_PAREN`    | `(`                   | Delimiter          |
+| `RIGHT_PAREN`   | `)`                   | Delimiter          |
+| `LEFT_BRACE`    | `{`                   | Delimiter          |
+| `RIGHT_BRACE`   | `}`                   | Delimiter          |
+| `LEFT_BRACKET`  | `[`                   | Delimiter          |
+| `RIGHT_BRACKET` | `]`                   | Delimiter          |
+| `COMMA`         | `,`                   | Delimiter          |
+| `DOT`           | `.`                   | Delimiter          |
+| `VBAR`          | `\|`                  | Delimiter          |
+| `MINUS`         | `-`                   | Operator           |
+| `PLUS`          | `+`                   | Operator           |
+| `STAR`          | `*`                   | Operator           |
+| `PERCENT`       | `%`                   | Operator           |
+| `BANG`          | `!`                   | Operator           |
+| `EQUAL`         | `=`                   | Operator           |
+| `EQUAL_EQUAL`   | `==`                  | Operator           |
+| `LESS`          | `<`                   | Operator           |
+| `LESS_EQUAL`    | `<=`                  | Operator           |
+| `GREATER`       | `>`                   | Operator           |
+| `GREATER_EQUAL` | `>=`                  | Operator           |
+| `AND`           | `and`                 | Keyword            |
+| `OR`            | `or`                  | Keyword            |
+| `NOT`           | `not`                 | Keyword            |
+| `CLASS`         | `class`               | Keyword            |
+| `IF`            | `if`                  | Keyword            |
+| `ELSE`          | `else`                | Keyword            |
+| `TRUE`          | `true`                | Keyword            |
+| `FALSE`         | `false`               | Keyword            |
+| `FOR`           | `for`                 | Keyword            |
+| `FN`            | `fn`                  | Keyword            |
+| `NIL`           | `nil`                 | Keyword            |
+| `PRINT`         | `print`               | Keyword            |
+| `RETURN`        | `return`              | Keyword            |
+| `SUPER`         | `super`               | Keyword            |
+| `THIS`          | `this`                | Keyword            |
+| `LET`           | `let`                 | Keyword            |
+| `WHILE`         | `while`               | Keyword            |
+| `SYMBOL`        | identifier            | Literal-Identifier |
+| `INT`           | integer               | Literal-Number     |
+| `FLOAT`         | floating point number | Literal-Number     |
+| `STRING`        | string                | Literal-String     |
+| `EOF`           |                       | Utility            |
+| `ERROR`         |                       | Utility            |

@@ -249,9 +249,9 @@ const isGreekLetterName = (c: string) => (
  * a hexadecimal digit, false otherwise.
  */
 const isHexDigit = (char: string) => (
-	(("0" <= char) && (char <= "9")) ||
-	(("a" <= char) && (char <= "f")) ||
-	(("A" <= char) && (char <= "F"))
+  (("0" <= char) && (char <= "9")) ||
+  (("a" <= char) && (char <= "f")) ||
+  (("A" <= char) && (char <= "F"))
 );
 
 /**
@@ -259,10 +259,8 @@ const isHexDigit = (char: string) => (
  * is an octal digit, false otherwise.
  */
 const isOctalDigit = (char: string) => (
-	"0" <= char && char <= "7"
+  "0" <= char && char <= "7"
 );
-
-
 
 /**
  * Errors are classified by type.
@@ -464,14 +462,14 @@ function lexicalAnalysis(code: string) {
    * @param message - A message describing what the error is.
    * @param phase - At what point during scanning did this error occur.
    */
-  const errorToken = (message: string, phase: string) => {
+  const errorToken = (message: string, phase: string, fix: string) => {
     const out = token(TOKEN.ERROR, "", null, $line, $column);
     $error = lexicalError(
       message,
       phase,
       $line,
       $column,
-      "terminate the string",
+      fix,
     );
     return out;
   };
@@ -549,6 +547,10 @@ function lexicalAnalysis(code: string) {
       case "nand":
         return newToken(TOKEN.NAND);
     }
+		// If we make it to this line, then
+		// the lexeme thus far is a user
+		// symbol (e.g., a variable name, 
+		// a function name, etc.)
     return newToken(TOKEN.SYMBOL);
   };
 
@@ -556,21 +558,72 @@ function lexicalAnalysis(code: string) {
    * Scans for a string
    */
   const scanString = () => {
+    // We keep the scanner moving forward
+    // as long as we do not encounter a closing
+    // quote, and as long as we haven’t reached
+    // the end of code input.
+
     while (peek() !== `"` && !atEnd()) {
+      // If we encounter a new line:
+      //   1. increment the line number.
+      //   2. reset the column to 0, since the column
+      //      always restarts at a new line.
       if (peek() !== `\n`) {
         $line++;
         $column = 0;
       } else {
+        // If we do not encounter a new line, then
+        // increment the column.
         $column++;
       }
+      // Keep moving forward so long as we
+      // haven’t encountered the closing
+      // quote.
       tick();
     }
+
+    // If we’ve reached the end at this point,
+    // then that means we didn’t consume
+    // a closing double quote. So, we return
+    // an error.
     if (atEnd()) {
-      return errorToken(`Infinite string`, `scanning a string`);
+      return errorToken(
+        `Infinite string`,
+        `scanning a string`,
+        `close the string with a double quote (")`,
+      );
     }
+    // Otherwise, there is a double-quote, so
+    // we consume it.
     tick();
+
+    // Now take the lexeme thus far.
+    // This lexeme includes the double-quotes,
+    // so we remove them with `slice(1,-1).`
     const lexeme = slice().slice(1, -1);
+
     return newToken(TOKEN.STRING, lexeme);
+  };
+
+  const scanBinaryNumber = () => {
+    // If the peek isn’t a 0 or a 1, then
+    // we return an error. `0b` prefaces a binary
+    // number, which must always be followed by
+    // a 0 or a 1.
+    if (!(peek() === "0" || peek() === ("1"))) {
+      return errorToken(
+        `Expected binary digits after “0b”`,
+        `scanning a binary number`,
+        `Either do not use a binary number, or follow “0b” with at least a 0 or a 1`,
+      );
+    }
+
+    // As long as we keep seeing a 0 or a 1 and haven’t reached
+    // the end,
+    while (((peek() === "0") || (peek() === "1")) && !atEnd()) {
+      // keep moving forward
+      tick();
+    }
   };
 
   /** Scans the provided code for a token. */
@@ -591,6 +644,19 @@ function lexicalAnalysis(code: string) {
     // or a keyword.
     if (isLatinGreek(char) || isMathSymbol(char)) {
       scanWord();
+    }
+
+    // If the character isn’t a Latin or Greek
+    // character, then it may be a digit. And if
+    // it is a digit, then we scan for numbers.
+    if (isDigit(char)) {
+      // If the character is `0` and
+      // the next character is `b`, then
+      // we’ve encountered a binary number.
+
+      if (char === "0" && match("b")) {
+        return scanBinaryNumber();
+      }
     }
 
     // We check if this is a delimiter.

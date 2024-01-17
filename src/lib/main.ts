@@ -186,6 +186,9 @@ class Token<T extends TOKEN, L extends Primitive = any> {
     this.$literal = literal;
   }
 
+	/**
+	 * Returns a copy of this token.
+	 */
   clone() {
     const out = new Token(
       this.$type,
@@ -356,6 +359,15 @@ class Err extends Error {
  * Returns a error factory. This function
  * creates a function that consructs a specific
  * type of error.
+ * 
+ * @param message - A message explaining this error.
+ * @param phase - At what phase did this error occur (
+ * e.g., `"parsing a multiplicative expression"`).
+ * @param line - At what line – within the source code –
+ * did this error occur. 
+ * @param column - At what column – within the line – did
+ * this error occur.
+ * @param fix - A possible way to fix this error. 
  */
 const errorFactory = (type: ErrorType) =>
 (
@@ -452,6 +464,10 @@ function lexicalAnalysis(code: string) {
 
   /**
    * Returns a new token.
+	 * @param type - The token type.
+	 * @param lexeme - The lexeme associated with this token
+	 * @param literal - The literal value (if any) associated with
+	 * this token. Defaults to null. 
    */
   const newToken = (
     type: TOKEN,
@@ -467,20 +483,32 @@ function lexicalAnalysis(code: string) {
    * as its head encounters whitespace.
    */
   const skipWhitespace = () => {
+		// As long as we haven’t reached the end
     while (!atEnd()) {
+			// Get the current character
       const char = peek();
+			// If the character is a space,
+			// return, or tab, proceed to the
+			// next character, and increment
+			// the column number
       switch (char) {
         case " ":
         case "\r":
         case "\t":
-          tick();
           $column++;
+          tick();
           break;
+				// If the character is a new line,
+				// increment the line number
+				// and set the column to 0.
         case "\n":
           $line++;
           $column = 0;
           tick();
           break;
+				// If none of the previous
+				// conditions apply,
+				// get out of this loop
         default:
           return;
       }

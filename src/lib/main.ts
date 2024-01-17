@@ -198,7 +198,21 @@ class Token<T extends TOKEN, L extends Primitive = any> {
   }
 }
 
-/** Returns a new token. */
+/**
+ * Returns a new token.
+ * 
+ * @param type
+ * - The {@link TOKEN} type.
+ * @param lexeme
+ * - The lexeme associated within this token.
+ * @param literal
+ * - A {@link Primitive} value associated with this token.
+ * @param line
+ * - The line within the source code where this token was read.
+ * @param column
+ * - The column within the line where this token was
+ * read (specifically, the column where the lexeme starts).
+ */
 const token = <T extends Primitive>(
   type: TOKEN,
   lexeme: string,
@@ -286,11 +300,41 @@ type ErrorType =
   | "runtime-error";
 
 class Err extends Error {
-  type: ErrorType;
-  phase: string;
-  line: number;
-  column: number;
-  fix: string;
+	/**
+	 * The type of this error. All errors fall under
+	 * one of the following types:
+	 * 
+	 * 1. `lexical-error`
+	 * 2. `syntax-error`
+	 * 3. `semantic-error`
+	 * 4. `runtime-error`
+	 */
+  $type: ErrorType;
+
+	/**
+	 * The phase where this error occurred.
+	 * E.g., `"scanning a string"`, or
+	 * `"parsing an additive expression"`
+	 */
+  $phase: string;
+
+	/**
+	 * The line – within the source code
+	 * - where this error occurred.
+	 */
+  $line: number;
+
+	/**
+	 * The column – within the source code line
+	 * – where this error occurred.
+	 */
+  $column: number;
+
+	/**
+	 * A message corresponding to a possible
+	 * way to fix this error.
+	 */
+  $fix: string;
   constructor(
     message: string,
     type: ErrorType,
@@ -300,11 +344,11 @@ class Err extends Error {
     fix: string,
   ) {
     super(message);
-    this.type = type;
-    this.phase = phase;
-    this.line = line;
-    this.column = column;
-    this.fix = fix;
+    this.$type = type;
+    this.$phase = phase;
+    this.$line = line;
+    this.$column = column;
+    this.$fix = fix;
   }
 }
 

@@ -1,3 +1,27 @@
+const {floor} = Math;
+/**
+ * A class corresponding to a fraction.
+ */
+class Fraction {
+  /** The numerator of this fraction. */
+  $n: number;
+  /** The denominator of this fraction. */
+  $d: number;
+  constructor(n:number, d:number) {
+    this.$n = floor(n);
+    this.$d = floor(d);
+  }
+}
+
+/**
+ * Returns a new fraction.
+ * @param n - The fraction’s numerator.
+ * @param d - The fraction’s denominator.
+ */
+const frac = (n:number, d:number) => (
+  new Fraction(n, d)
+)
+
 enum TOKEN {
   /** Delimiter token: `(` */
   LEFT_PAREN,
@@ -82,6 +106,17 @@ enum TOKEN {
   INT,
   /** Literal token: float */
   FLOAT,
+  /** Literal token: scientific number */
+  SCIENTIFIC_NUMBER,
+  /** Literal token: big integer */
+  BIG_INT,
+  /** Literal token: big fraction */
+  BIG_FRACTION,
+  /** Literal token: fraction */
+  FRACTION,
+  /** Literal token: complex number */
+  COMPLEX,
+
   /** Literal token: string */
   STRING,
 
@@ -110,6 +145,18 @@ enum TOKEN {
   EMPTY,
   END,
 }
+
+/**
+ * A token type corresponding to a number.
+ */
+type NumberTokenType =
+  | TOKEN.INT
+  | TOKEN.FLOAT
+  | TOKEN.SCIENTIFIC_NUMBER
+  | TOKEN.FRACTION
+  | TOKEN.BIG_INT
+  | TOKEN.BIG_FRACTION
+  | TOKEN.COMPLEX;
 
 /**
  * What follows are global constants.
@@ -186,9 +233,9 @@ class Token<T extends TOKEN, L extends Primitive = any> {
     this.$literal = literal;
   }
 
-	/**
-	 * Returns a copy of this token.
-	 */
+  /**
+   * Returns a copy of this token.
+   */
   clone() {
     const out = new Token(
       this.$type,
@@ -203,7 +250,7 @@ class Token<T extends TOKEN, L extends Primitive = any> {
 
 /**
  * Returns a new token.
- * 
+ *
  * @param type
  * - The {@link TOKEN} type.
  * @param lexeme
@@ -303,40 +350,40 @@ type ErrorType =
   | "runtime-error";
 
 class Err extends Error {
-	/**
-	 * The type of this error. All errors fall under
-	 * one of the following types:
-	 * 
-	 * 1. `lexical-error`
-	 * 2. `syntax-error`
-	 * 3. `semantic-error`
-	 * 4. `runtime-error`
-	 */
+  /**
+   * The type of this error. All errors fall under
+   * one of the following types:
+   *
+   * 1. `lexical-error`
+   * 2. `syntax-error`
+   * 3. `semantic-error`
+   * 4. `runtime-error`
+   */
   $type: ErrorType;
 
-	/**
-	 * The phase where this error occurred.
-	 * E.g., `"scanning a string"`, or
-	 * `"parsing an additive expression"`
-	 */
+  /**
+   * The phase where this error occurred.
+   * E.g., `"scanning a string"`, or
+   * `"parsing an additive expression"`
+   */
   $phase: string;
 
-	/**
-	 * The line – within the source code
-	 * - where this error occurred.
-	 */
+  /**
+   * The line – within the source code
+   * - where this error occurred.
+   */
   $line: number;
 
-	/**
-	 * The column – within the source code line
-	 * – where this error occurred.
-	 */
+  /**
+   * The column – within the source code line
+   * – where this error occurred.
+   */
   $column: number;
 
-	/**
-	 * A message corresponding to a possible
-	 * way to fix this error.
-	 */
+  /**
+   * A message corresponding to a possible
+   * way to fix this error.
+   */
   $fix: string;
   constructor(
     message: string,
@@ -359,15 +406,15 @@ class Err extends Error {
  * Returns a error factory. This function
  * creates a function that consructs a specific
  * type of error.
- * 
+ *
  * @param message - A message explaining this error.
  * @param phase - At what phase did this error occur (
  * e.g., `"parsing a multiplicative expression"`).
  * @param line - At what line – within the source code –
- * did this error occur. 
+ * did this error occur.
  * @param column - At what column – within the line – did
  * this error occur.
- * @param fix - A possible way to fix this error. 
+ * @param fix - A possible way to fix this error.
  */
 const errorFactory = (type: ErrorType) =>
 (
@@ -457,6 +504,22 @@ function lexicalAnalysis(code: string) {
   const peek = () => atEnd() ? "" : code[$current];
 
   /**
+   * Returns true if the current character
+   * matches the provided character.
+   *
+   * @param char - The character to match against.
+   */
+  const peekIs = (char: string) => (
+    !atEnd() && (code[$current] === char)
+  );
+
+  /**
+   * Returns the character just ahead of the character
+   * currently pointed at by the scanner.
+   */
+  const peekNext = () => atEnd() ? "" : code[$current + 1];
+
+  /**
    * Returns the code substring starting
    * from start to current.
    */
@@ -464,10 +527,10 @@ function lexicalAnalysis(code: string) {
 
   /**
    * Returns a new token.
-	 * @param type - The token type.
-	 * @param lexeme - The lexeme associated with this token
-	 * @param literal - The literal value (if any) associated with
-	 * this token. Defaults to null. 
+   * @param type - The token type.
+   * @param lexeme - The lexeme associated with this token
+   * @param literal - The literal value (if any) associated with
+   * this token. Defaults to null.
    */
   const newToken = (
     type: TOKEN,
@@ -483,14 +546,14 @@ function lexicalAnalysis(code: string) {
    * as its head encounters whitespace.
    */
   const skipWhitespace = () => {
-		// As long as we haven’t reached the end
+    // As long as we haven’t reached the end
     while (!atEnd()) {
-			// Get the current character
+      // Get the current character
       const char = peek();
-			// If the character is a space,
-			// return, or tab, proceed to the
-			// next character, and increment
-			// the column number
+      // If the character is a space,
+      // return, or tab, proceed to the
+      // next character, and increment
+      // the column number
       switch (char) {
         case " ":
         case "\r":
@@ -498,17 +561,17 @@ function lexicalAnalysis(code: string) {
           $column++;
           tick();
           break;
-				// If the character is a new line,
-				// increment the line number
-				// and set the column to 0.
+        // If the character is a new line,
+        // increment the line number
+        // and set the column to 0.
         case "\n":
           $line++;
           $column = 0;
           tick();
           break;
-				// If none of the previous
-				// conditions apply,
-				// get out of this loop
+        // If none of the previous
+        // conditions apply,
+        // get out of this loop
         default:
           return;
       }
@@ -627,7 +690,8 @@ function lexicalAnalysis(code: string) {
   };
 
   /**
-   * Scans for a string
+   * Scans for a string. Strings are always
+   * surrounded by double quotes.
    */
   const scanString = () => {
     // We keep the scanner moving forward
@@ -677,12 +741,15 @@ function lexicalAnalysis(code: string) {
     return newToken(TOKEN.STRING, lexeme);
   };
 
+  /**
+   * Scans for a binary number.
+   */
   const scanBinaryNumber = () => {
     // If the peek isn’t a 0 or a 1, then
     // we return an error. `0b` prefaces a binary
     // number, which must always be followed by
     // a 0 or a 1.
-    if (!(peek() === "0" || peek() === ("1"))) {
+    if (!(peekIs("0") || peekIs("1"))) {
       return errorToken(
         `Expected binary digits after “0b”`,
         `scanning a binary number`,
@@ -692,7 +759,7 @@ function lexicalAnalysis(code: string) {
 
     // As long as we keep seeing a 0 or a 1 and haven’t reached
     // the end,
-    while (((peek() === "0") || (peek() === "1")) && !atEnd()) {
+    while ((peekIs("0") || peekIs("1")) && !atEnd()) {
       // keep moving forward
       tick();
     }
@@ -706,6 +773,118 @@ function lexicalAnalysis(code: string) {
     const numericValue = Number.parseInt(binaryDigitString, 2);
 
     return newToken(TOKEN.INT).literal(numericValue);
+  };
+
+  /**
+   * Scans for a number. There are 7 possible
+   * number token types:
+   *
+   * 1. INT
+   * 2. FLOAT
+   * 3. FRACTION
+   * 4. SCIENTIFIC_NUMBER
+   * 5. BIG_INT
+   * 6. BIG_FRACTION
+   * 7. COMPLEX
+   */
+  const scanNumber = (initialType: TOKEN) => {
+    let type = initialType;
+    let didScanSeparators = false;
+    while (isDigit(peek()) && !atEnd()) {
+      tick();
+    }
+    if (peekIs("_") && isDigit(peekNext())) {
+      // eat the '_'
+      tick();
+
+      // we just scanned a separator, so note that
+      didScanSeparators = true;
+
+      // keep track of how many digits we encounter after
+      // the '_'
+      let digits = 0;
+
+      // as long as we haven’t reached
+      // the end and keep encountering
+      // digits
+      while (isDigit(peek()) && !atEnd()) {
+        // move the scanner forward, and
+        tick();
+
+        // increment the digit counter
+        digits++;
+
+        // if the next character is a '_',
+        // then this is a separated number with
+        // multiple separators.
+        if (peekIs("_") && isDigit(peekNext())) {
+          // But, we require that there are exactly
+          // three digits between two separators.
+          if (digits === 3) {
+            // If there are exactly three digits,
+            // then move scanner forward,
+            tick();
+
+            // and reset the digits counter.
+            digits = 0;
+          } else {
+            // we return an error
+            return errorToken(
+              // the error message
+              `Expected 3 digits after the separator “_” but got ${digits}.`,
+              // the phase where this error occurred
+              `scanning an underscore-separated number`,
+              // a possible fix
+              `Use exactly three digits after “_”, or refrain from using an underscore-separated number.`,
+            );
+          }
+        }
+      }
+      // There must ALWAYS be three digits after a separator
+      // E.g., “2_” is not a valid number.
+      if (digits !== 3) {
+        return errorToken(
+          // the error message
+          `Expected 3 digits after the separator “_” but got ${digits}.`,
+          // the phase where this error occurred
+          `scanning an underscore-separated number`,
+          // a possible fix
+          `Use exactly three digits after “_”, or refrain from using an underscore-separated number.`,
+        );
+      }
+    }
+
+    // The digit could be followed by a dot.
+    // If it is, then this is a floating point
+    // number.
+    if (peekIs(".") && isDigit(peekNext())) {
+      // Eat the dot.
+      tick();
+      // Toggle the number type to a FLOAT.
+      type = TOKEN.FLOAT;
+      // Continue consuming digits.
+      while (isDigit(peek()) && !atEnd()) {
+        tick();
+      }
+    }
+
+    // The digit could be followed by a vertical bar.
+    // If it is, then this is a fraction.
+    if (peekIs("|")) {
+      if (type !== TOKEN.INT) {
+        return errorToken(
+          `Expected an integer before “|”`,
+          `scanning a fraction`,
+          `Before the “|”, place an integer, or refrain from using a fraction (e.g., use a float instead)`,
+        );
+      }
+      type = TOKEN.FRACTION;
+      tick();
+      while (isDigit(peek()) && !atEnd()) {
+        tick();
+      }
+      
+    }
   };
 
   /** Scans the provided code for a token. */

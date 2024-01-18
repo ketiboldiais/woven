@@ -1,4 +1,82 @@
-const {floor} = Math;
+const { floor } = Math;
+const MAX_INT = Number.MAX_SAFE_INTEGER;
+const MAX_FLOAT = Number.MAX_VALUE;
+/** At the parsing stage, all parsed node results are kept in an `Either` type (either an AST node) or an Err (error) object. We want to avoid throwing as much as possible for optimal parsing. */
+type Either<A, B> = Left<A> | Right<B>;
+
+/** A box type corresponding to failure. */
+class Left<T> {
+  private value: T;
+  constructor(value: T) {
+    this.value = value;
+  }
+  map<A>(f: (x: never) => A): Either<T, never> {
+    return this as any;
+  }
+  isLeft(): this is Left<T> {
+    return true;
+  }
+  isRight(): this is never {
+    return false;
+  }
+  chain<X, S>(f: (x: never) => Either<X, S>): Left<T> {
+    return this;
+  }
+  read<K>(value: K): K {
+    return value;
+  }
+  flatten(): Left<T> {
+    return this;
+  }
+  unwrap() {
+    return this.value;
+  }
+  ap<B, E>(f: Either<T, E>): Either<never, B> {
+    return this as any;
+  }
+}
+
+/** A box type corresponding success. */
+class Right<T> {
+  private value: T;
+  constructor(value: T) {
+    this.value = value;
+  }
+  map<X>(f: (x: T) => X): Either<never, X> {
+    return new Right(f(this.value));
+  }
+  isLeft(): this is never {
+    return false;
+  }
+  isRight(): this is Right<T> {
+    return true;
+  }
+  chain<N, X>(f: (x: T) => Either<N, X>): Either<never, X> {
+    return f(this.value) as Either<never, X>;
+  }
+  flatten(): Right<(T extends Right<(infer T)> ? T : never)> {
+    return ((this.value instanceof Right ||
+        this.value instanceof Left)
+      ? this.value
+      : this) as Right<(T extends Right<(infer T)> ? T : never)>;
+  }
+  read<K>(_: K): T {
+    return this.value;
+  }
+  unwrap() {
+    return this.value;
+  }
+  ap<B, E>(f: Either<E, (x: T) => B>): Either<never, B> {
+    if (f.isLeft()) return f as any as Right<B>;
+    return this.map(f.value);
+  }
+}
+
+/** Returns a new left. */
+const left = <T>(x: T): Left<T> => new Left(x);
+
+/** Returns a new right. */
+const right = <T>(x: T): Right<T> => new Right(x);
 /**
  * A class corresponding to a fraction.
  */
@@ -7,7 +85,7 @@ class Fraction {
   $n: number;
   /** The denominator of this fraction. */
   $d: number;
-  constructor(n:number, d:number) {
+  constructor(n: number, d: number) {
     this.$n = floor(n);
     this.$d = floor(d);
   }
@@ -18,9 +96,21 @@ class Fraction {
  * @param n - The fraction’s numerator.
  * @param d - The fraction’s denominator.
  */
-const frac = (n:number, d:number) => (
+const frac = (n: number, d: number) => (
   new Fraction(n, d)
-)
+);
+
+class Scinum {
+  $b: number;
+  $e: number;
+  constructor(b: number, e: number) {
+    this.$b = b;
+    this.$e = e;
+  }
+}
+const scinum = (base: number, exponent: number) => (
+  new Scinum(base, exponent)
+);
 
 enum TOKEN {
   /** Delimiter token: `(` */
@@ -56,8 +146,12 @@ enum TOKEN {
   CARET,
   /** Operator token: `-` */
   MINUS,
+  /** Operator token: `--` */
+  MINUS_MINUS,
   /** Operator token: `+` */
   PLUS,
+  /** Operator token: `++` */
+  PLUS_PLUS,
   /** Operator token: `*` */
   STAR,
   /** Operator token: `%` */
@@ -165,10 +259,20 @@ const PI = Math.PI;
 const E = Math.E;
 
 /** Tokens have a literal value, but they must be a Primitive type. */
-type Primitive = number | string | boolean | null;
+type Primitive = number | string | boolean | null | Fraction | Scinum;
 
 /** A class corresponding to a token. */
-class Token<T extends TOKEN, L extends Primitive = any> {
+class Token<T extends TOKEN = any, L extends Primitive = any> {
+  isRightDelimiter() {
+    return (
+      this.$type === TOKEN.RIGHT_PAREN ||
+      this.$type === TOKEN.RIGHT_BRACKET ||
+      this.$type === TOKEN.RIGHT_BRACE
+    );
+  }
+  is(type: TOKEN) {
+    return this.$type === type;
+  }
   /** The token’s type. */
   $type: T;
 
@@ -219,6 +323,11 @@ class Token<T extends TOKEN, L extends Primitive = any> {
     return out as any as Token<T, X>;
   }
 
+  toString() {
+    const typename = TOKEN[this.$type];
+    return `[${typename} “${this.$lexeme}” L${this.$line} C${this.$column}]`;
+  }
+
   constructor(
     type: T,
     lexeme: string,
@@ -245,6 +354,11 @@ class Token<T extends TOKEN, L extends Primitive = any> {
       this.$column,
     );
     return out;
+  }
+
+  static empty: Token<TOKEN, any> = new Token(TOKEN.EMPTY, "", null, -1, -1);
+  isEmpty() {
+    return this.$type === TOKEN.EMPTY;
   }
 }
 
@@ -444,7 +558,7 @@ const runtimeError = errorFactory("runtime-error");
  * Conducts a lexical analysis of the given Woven
  * code.
  */
-function lexicalAnalysis(code: string) {
+export function lexicalAnalysis(code: string) {
   /**
    * The current line the
    * lexer is reading.
@@ -518,6 +632,12 @@ function lexicalAnalysis(code: string) {
    * currently pointed at by the scanner.
    */
   const peekNext = () => atEnd() ? "" : code[$current + 1];
+
+  /**
+   * Returns the character n places ahead of the
+   * current character.
+   */
+  const lookup = (n: number) => atEnd() ? "" : code[$current + n];
 
   /**
    * Returns the code substring starting
@@ -775,6 +895,72 @@ function lexicalAnalysis(code: string) {
     return newToken(TOKEN.INT).literal(numericValue);
   };
 
+  const newNumberToken = (
+    numberString: string,
+    type: NumberTokenType,
+    hasSeparators: boolean,
+  ) => {
+    const n = hasSeparators ? numberString.replaceAll("_", "") : numberString;
+    switch (type) {
+      case TOKEN.INT: {
+        const num = Number.parseInt(n);
+        if (num > MAX_INT) {
+          return errorToken(
+            `encountered an integer overflow.`,
+            `scanning an integer literal`,
+            `considering using a big integer.`,
+          );
+        } else {
+          return newToken(type).literal(num);
+        }
+      }
+      case TOKEN.FLOAT: {
+        const num = Number.parseFloat(n);
+        if (num > MAX_FLOAT) {
+          return errorToken(
+            `encountered a floating point overflow.`,
+            `scanning a floating point number`,
+            `consider using a fraction or big fraction`,
+          );
+        } else {
+          return newToken(type).literal(num);
+        }
+      }
+      case TOKEN.SCIENTIFIC_NUMBER: {
+        const [a, b] = n.split("E");
+        const base = Number.parseFloat(a);
+        const exponent = Number.parseInt(b);
+        return newToken(type).literal(scinum(base, exponent));
+      }
+      case TOKEN.FRACTION: {
+        const [N, D] = n.split("|");
+        const numerator = Number.parseInt(N);
+        const denominator = Number.parseInt(D);
+        if (numerator > MAX_INT) {
+          return errorToken(
+            `encounterd an integer overflow in the numerator of “${n}”`,
+            `scanning a fraction`,
+            `considering using a big fraction`,
+          );
+        } else if (denominator > MAX_INT) {
+          return errorToken(
+            `encounterd an integer overflow in the denominator of “${n}”`,
+            `scanning a fraction`,
+            `considering using a big fraction`,
+          );
+        } else {
+          return newToken(type).literal(frac(numerator, denominator));
+        }
+      }
+      default:
+        return errorToken(
+          `unknown number type`,
+          `scanning a number`,
+          `refrain from using “${n}”`,
+        );
+    }
+  };
+
   /**
    * Scans for a number. There are 7 possible
    * number token types:
@@ -787,7 +973,7 @@ function lexicalAnalysis(code: string) {
    * 6. BIG_FRACTION
    * 7. COMPLEX
    */
-  const scanNumber = (initialType: TOKEN) => {
+  const scanNumber = (initialType: NumberTokenType) => {
     let type = initialType;
     let didScanSeparators = false;
     while (isDigit(peek()) && !atEnd()) {
@@ -883,14 +1069,38 @@ function lexicalAnalysis(code: string) {
       while (isDigit(peek()) && !atEnd()) {
         tick();
       }
-      
+      return newNumberToken(slice(), type, didScanSeparators);
     }
+
+    // The number could be followed by an `E`.
+    // If it is, then this is a scientific number.
+    if (peekIs("E")) {
+      if (isDigit(peekNext())) {
+        type = TOKEN.SCIENTIFIC_NUMBER;
+        tick();
+        while (isDigit(peek())) {
+          tick();
+        }
+      } else if (
+        ((peekNext() === "+") || (peekNext() === "-")) && isDigit(lookup(2))
+      ) {
+        type = TOKEN.SCIENTIFIC_NUMBER;
+        tick();
+        tick();
+        while (isDigit(peek())) {
+          tick();
+        }
+      }
+    }
+    return newNumberToken(slice(), type, didScanSeparators);
   };
 
   /** Scans the provided code for a token. */
   const scan = () => {
     // We always start by skipping whitespace.
     skipWhitespace();
+
+    $start = $current;
 
     // If we’ve reached the end, immediately return an END token.
     if (atEnd()) {
@@ -904,7 +1114,7 @@ function lexicalAnalysis(code: string) {
     // character. If it is, then this is either an identifier
     // or a keyword.
     if (isLatinGreek(char) || isMathSymbol(char)) {
-      scanWord();
+      return scanWord();
     }
 
     // If the character isn’t a Latin or Greek
@@ -917,6 +1127,8 @@ function lexicalAnalysis(code: string) {
 
       if (char === "0" && match("b")) {
         return scanBinaryNumber();
+      } else {
+        return scanNumber(TOKEN.INT);
       }
     }
 
@@ -946,10 +1158,18 @@ function lexicalAnalysis(code: string) {
         return newToken(TOKEN.COMMA);
       case ".":
         return newToken(TOKEN.DOT);
-      case "-":
-        return newToken(TOKEN.MINUS);
+      case "-": {
+        if (peek() === "-" && peekNext() === "-") {
+          while (peek() !== "\n" && !atEnd()) {
+            tick();
+          }
+          return Token.empty;
+        } else {
+          return newToken(match("-") ? TOKEN.MINUS_MINUS : TOKEN.MINUS);
+        }
+      }
       case "+":
-        return newToken(TOKEN.PLUS);
+        return newToken(match("+") ? TOKEN.PLUS_PLUS : TOKEN.PLUS);
       case "*":
         return newToken(TOKEN.STAR);
       case ";":
@@ -960,7 +1180,32 @@ function lexicalAnalysis(code: string) {
         return newToken(TOKEN.SLASH);
       case "^":
         return newToken(TOKEN.CARET);
-
+      case "=": {
+        if (peek() === "=" && peekNext() === "=") {
+          while (peek() === "=") {
+            tick();
+          }
+          while (!atEnd()) {
+            tick();
+            if (peek() === "=" && peekNext() === "=" && lookup(2) === "=") {
+              break;
+            }
+          }
+          if (atEnd()) {
+            return errorToken(
+              `unterminated block comment`,
+              `scanning a “=”`,
+              `close the block comment with three equal symbols ("===")`,
+            );
+          }
+          while (peek() === "=") {
+            tick();
+          }
+          return Token.empty;
+        } else {
+          return newToken(match("=") ? TOKEN.EQUAL_EQUAL : TOKEN.EQUAL);
+        }
+      }
       // If the next character is `=`, then we
       // match the lexeme `!=`. Otherwise, we only
       // match the lexeme `!`.
@@ -983,5 +1228,61 @@ function lexicalAnalysis(code: string) {
       case `"`:
         return scanString();
     }
+    return errorToken(
+      `unknown token: “${char}”`,
+      `scanning for tokens`,
+      `remove the unknown token`,
+    );
+  };
+
+  const stream = () => {
+    const out: Token[] = [];
+    let prev = Token.empty;
+    let now = scan();
+    if (!now.isEmpty()) {
+      out.push(now);
+    } else if ($error !== null) {
+      return left($error);
+    }
+    let peek = scan();
+    if ($error !== null) {
+      return left($error);
+    }
+    while (!atEnd()) {
+      prev = now;
+      now = peek;
+      const t = scan();
+      if ($error !== null) {
+        return left($error);
+      }
+      if (t.isEmpty()) {
+        continue;
+      } else {
+        peek = t;
+      }
+      if (
+        prev.isRightDelimiter() && now.is(TOKEN.COMMA) &&
+        peek.isRightDelimiter()
+      ) {
+        continue;
+      }
+      out.push(now);
+    }
+    out.push(peek);
+    if (out.length && !out[out.length - 1].is(TOKEN.END)) {
+      out.push(token(
+        TOKEN.END,
+        "END",
+        null,
+        $line,
+        $column,
+      ));
+    }
+    return right(out);
+  };
+
+  return {
+    stream,
+    scan,
   };
 }

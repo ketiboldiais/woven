@@ -1245,15 +1245,20 @@ export function lexicalAnalysis(code: string) {
   };
 }
 
-interface Visitor<T> {
+interface ExprVisitor<T> {
   int(expr: Int): T;
   float(expr: Float): T;
   assign(expr: Assign): T;
   binaryExpr(expr: BinaryExpr): T;
+  callExpr(expr: CallExpr): T;
+  groupExpr(expr: GroupExpr): T;
+  logicalBinaryExpr(expr: LogicalBinaryExpr): T;
+  unaryExpr(expr: UnaryExpr): T;
+  variable(expr: Variable): T;
 }
 
 abstract class Expr {
-  abstract accept<T>(visitor: Visitor<T>): T;
+  abstract accept<T>(ExprVisitor: ExprVisitor<T>): T;
 }
 
 /** A class corresponding to an integer node. */
@@ -1263,11 +1268,14 @@ class Int extends Expr {
     super();
     this.$value = floor(value);
   }
-  accept<T>(visitor: Visitor<T>): T {
-    return visitor.int(this);
+  accept<T>(ExprVisitor: ExprVisitor<T>): T {
+    return ExprVisitor.int(this);
   }
 }
 
+/**
+ * Returns a new integer node.
+ */
 const int = (value: number) => (
   new Int(value)
 );
@@ -1279,11 +1287,14 @@ class Float extends Expr {
     super();
     this.$value = value;
   }
-  accept<T>(visitor: Visitor<T>): T {
-    return visitor.float(this);
+  accept<T>(ExprVisitor: ExprVisitor<T>): T {
+    return ExprVisitor.float(this);
   }
 }
 
+/**
+ * Returns a new float node.
+ */
 const float = (value: number) => (
   new Float(value)
 );
@@ -1297,11 +1308,14 @@ class Assign extends Expr {
     this.$name = name;
     this.$value = value;
   }
-  accept<T>(visitor: Visitor<T>): T {
-    return visitor.assign(this);
+  accept<T>(ExprVisitor: ExprVisitor<T>): T {
+    return ExprVisitor.assign(this);
   }
 }
 
+/**
+ * Returns a new assignment node.
+ */
 const assign = (name: Token, value: Expr) => (
   new Assign(name, value)
 );
@@ -1317,11 +1331,231 @@ class BinaryExpr extends Expr {
     this.$op = op;
     this.$right = right;
   }
-  accept<T>(visitor: Visitor<T>): T {
-    return visitor.binaryExpr(this);
+  accept<T>(ExprVisitor: ExprVisitor<T>): T {
+    return ExprVisitor.binaryExpr(this);
   }
 }
 
+/**
+ * A class corresponding to a logical binary expression.
+ */
+class LogicalBinaryExpr extends Expr {
+  $left: Expr;
+  $op: Token;
+  $right: Expr;
+  constructor(left: Expr, op: Token, right: Expr) {
+    super();
+    this.$left = left;
+    this.$op = op;
+    this.$right = right;
+  }
+  accept<T>(ExprVisitor: ExprVisitor<T>): T {
+    return ExprVisitor.logicalBinaryExpr(this);
+  }
+}
+
+/**
+ * A class corresponding to a unary expression.
+ */
+class UnaryExpr extends Expr {
+  $op: Token;
+  $arg: Expr;
+  constructor(op: Token, arg: Expr) {
+    super();
+    this.$op = op;
+    this.$arg = arg;
+  }
+  accept<T>(ExprVisitor: ExprVisitor<T>): T {
+    return ExprVisitor.unaryExpr(this);
+  }
+}
+
+/**
+ * Returns a new unary expression node.
+ */
+const unaryExpr = (op: Token, arg: Expr) => (
+  new UnaryExpr(op, arg)
+);
+
+/**
+ * Returns a new logical binary expression node.
+ */
+const logicalBinaryExpr = (left: Expr, op: Token, right: Expr) => (
+  new LogicalBinaryExpr(left, op, right)
+);
+
+/**
+ * Returns a new binary expression node.
+ */
 const binex = (left: Expr, op: Token, right: Expr) => (
   new BinaryExpr(left, op, right)
+);
+
+/**
+ * A class corresponding to a function call expression.
+ */
+class CallExpr extends Expr {
+  $callee: Expr;
+  $paren: Token;
+  $args: Expr[];
+  constructor(callee: Expr, args: Expr[], paren: Token) {
+    super();
+    this.$callee = callee;
+    this.$paren = paren;
+    this.$args = args;
+  }
+  accept<T>(ExprVisitor: ExprVisitor<T>): T {
+    return ExprVisitor.callExpr(this);
+  }
+}
+
+/**
+ * Returns new function call expression.
+ */
+const callExpr = (callee: Expr, args: Expr[], paren: Token) => (
+  new CallExpr(callee, args, paren)
+);
+
+/**
+ * A class corresponding to a parenthesized expression.
+ */
+class GroupExpr extends Expr {
+  $inner: Expr;
+  constructor(innerExpression: Expr) {
+    super();
+    this.$inner = innerExpression;
+  }
+  accept<T>(ExprVisitor: ExprVisitor<T>): T {
+    return ExprVisitor.groupExpr(this);
+  }
+}
+
+/**
+ * Returns a new parenthesized expression node.
+ */
+const groupExpr = (innerExpression: Expr) => (
+  new GroupExpr(innerExpression)
+);
+
+/**
+ * A class corresponding to a variable node.
+ */
+class Variable extends Expr {
+  $name: Token;
+  constructor(name: Token) {
+    super();
+    this.$name = name;
+  }
+  accept<T>(ExprVisitor: ExprVisitor<T>): T {
+    return ExprVisitor.variable(this);
+  }
+}
+const variable = (name: Token) => (
+  new Variable(name)
+);
+
+interface StmtVisitor<T> {
+  block(stmt: BlockStmt): T;
+  expression(stmt: ExprStmt): T;
+  fnDef(stmt: FnDefStmt): T;
+  conditional(stmt: ConditionalStmt): T;
+}
+
+abstract class Stmt {
+  abstract accept<T>(visitor: StmtVisitor<T>): T;
+}
+
+/**
+ * A class corresponding to a block statement.
+ */
+class BlockStmt extends Stmt {
+  $statements: Stmt[];
+  constructor(statements: Stmt[]) {
+    super();
+    this.$statements = statements;
+  }
+  accept<T>(visitor: StmtVisitor<T>): T {
+    return visitor.block(this);
+  }
+}
+
+/**
+ * Returns a new block statement node.
+ */
+const blockStmt = (statements: Stmt[]) => (
+  new BlockStmt(statements)
+);
+
+/**
+ * A class corresponding to an expression statement.
+ */
+class ExprStmt extends Stmt {
+  $expression: Expr;
+  constructor(expression: Expr) {
+    super();
+    this.$expression = expression;
+  }
+  accept<T>(visitor: StmtVisitor<T>): T {
+    return visitor.expression(this);
+  }
+}
+
+/**
+ * Returns a new expression statement.
+ */
+const exprStmt = (expression: Expr) => (
+  new ExprStmt(expression)
+);
+
+/**
+ * A class corresponding to a function
+ * definition statement.
+ */
+class FnDefStmt extends Stmt {
+  $name: Token;
+  $params: Token[];
+  $body: Stmt[];
+  constructor(name: Token, params: Token[], body: Stmt[]) {
+    super();
+    this.$name = name;
+    this.$params = params;
+    this.$body = body;
+  }
+  accept<T>(visitor: StmtVisitor<T>): T {
+    return visitor.fnDef(this);
+  }
+}
+
+/**
+ * Returns a new function definition statement
+ * node.
+ */
+const fnDefStmt = (name: Token, params: Token[], body: Stmt[]) => (
+  new FnDefStmt(name, params, body)
+);
+
+class ConditionalStmt extends Stmt {
+  $condition: Expr;
+  $then: Stmt;
+  $else: Stmt;
+  constructor(condition: Expr, thenBranch: Stmt, elseBranch: Stmt) {
+    super();
+    this.$condition = condition;
+    this.$then = thenBranch;
+    this.$else = elseBranch;
+  }
+  accept<T>(visitor: StmtVisitor<T>): T {
+    return visitor.conditional(this);
+  }
+}
+
+/**
+ * Returns a new conditional statement node.
+ */
+const conditionalStmt = (
+  condition: Expr,
+  thenBranch: Stmt,
+  elseBranch: Stmt,
+) => (
+  new ConditionalStmt(condition, thenBranch, elseBranch)
 );

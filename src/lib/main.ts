@@ -387,19 +387,6 @@ const token = <T extends Primitive>(
   new Token(type, lexeme, literal, line, column)
 );
 
-/** Returns the empty token (used as a placeholder for initializing states). */
-const emptyToken = () => (
-  token(TOKEN.EMPTY, "", null, -1, -1)
-);
-
-/** Returns true if the given character is a whitespace character. */
-const isWhitespace = (c: string) => (
-  c === " " ||
-  c === "\n" ||
-  c === "\t" ||
-  c === "\r"
-);
-
 /** Returns true if the string `char` is a Latin or Greek character. */
 const isLatinGreek = (
   char: string,
@@ -408,37 +395,8 @@ const isLatinGreek = (
 /** Returns true if the given string `char` is within the unicode range `∀-⋿`. Else, returns false. */
 const isMathSymbol = (char: string) => /^[∀-⋿]/u.test(char);
 
-/** Returns true if the given string `char` is a Latin/Greek character or a math symbol. Else, returns false. */
-const isValidName = (
-  char: string,
-) => (isLatinGreek(char) || isMathSymbol(char));
-
 /** Returns true if the given string `char` is a digit. Else, returns false. */
 const isDigit = (char: string) => "0" <= char && char <= "9";
-
-/** Returns true if the given character is a greek letter name. */
-const isGreekLetterName = (c: string) => (
-  /^(alpha|beta|gamma|delta|epsilon|zeta|theta|iota|kappa|lambda|mu|nu|xi|omicron|pi|rho|sigma|upsilon|phi|chi|psi|omega)/
-    .test(c.toLowerCase())
-);
-
-/**
- * Returns true if the given character is
- * a hexadecimal digit, false otherwise.
- */
-const isHexDigit = (char: string) => (
-  (("0" <= char) && (char <= "9")) ||
-  (("a" <= char) && (char <= "f")) ||
-  (("A" <= char) && (char <= "F"))
-);
-
-/**
- * Returns true if the given character
- * is an octal digit, false otherwise.
- */
-const isOctalDigit = (char: string) => (
-  "0" <= char && char <= "7"
-);
 
 /**
  * Errors are classified by type.
@@ -1286,3 +1244,84 @@ export function lexicalAnalysis(code: string) {
     scan,
   };
 }
+
+interface Visitor<T> {
+  int(expr: Int): T;
+  float(expr: Float): T;
+  assign(expr: Assign): T;
+  binaryExpr(expr: BinaryExpr): T;
+}
+
+abstract class Expr {
+  abstract accept<T>(visitor: Visitor<T>): T;
+}
+
+/** A class corresponding to an integer node. */
+class Int extends Expr {
+  $value: number;
+  constructor(value: number) {
+    super();
+    this.$value = floor(value);
+  }
+  accept<T>(visitor: Visitor<T>): T {
+    return visitor.int(this);
+  }
+}
+
+const int = (value: number) => (
+  new Int(value)
+);
+
+/** A class corresponding to a float node. */
+class Float extends Expr {
+  $value: number;
+  constructor(value: number) {
+    super();
+    this.$value = value;
+  }
+  accept<T>(visitor: Visitor<T>): T {
+    return visitor.float(this);
+  }
+}
+
+const float = (value: number) => (
+  new Float(value)
+);
+
+/** A class corresponding to an Assignment node. */
+class Assign extends Expr {
+  $name: Token;
+  $value: Expr;
+  constructor(name: Token, value: Expr) {
+    super();
+    this.$name = name;
+    this.$value = value;
+  }
+  accept<T>(visitor: Visitor<T>): T {
+    return visitor.assign(this);
+  }
+}
+
+const assign = (name: Token, value: Expr) => (
+  new Assign(name, value)
+);
+
+/** A class corresponding to a binary expression. */
+class BinaryExpr extends Expr {
+  $left: Expr;
+  $op: Token;
+  $right: Expr;
+  constructor(left: Expr, op: Token, right: Expr) {
+    super();
+    this.$left = left;
+    this.$op = op;
+    this.$right = right;
+  }
+  accept<T>(visitor: Visitor<T>): T {
+    return visitor.binaryExpr(this);
+  }
+}
+
+const binex = (left: Expr, op: Token, right: Expr) => (
+  new BinaryExpr(left, op, right)
+);

@@ -1520,6 +1520,7 @@ interface Visitor<T> {
   varDefStmt(stmt: VarDefStmt): T;
   whileStmt(stmt: WhileStmt): T;
   blockStmt(stmt: BlockStmt): T;
+  returnStmt(stmt: ReturnStmt): T;
   expressionStmt(stmt: ExprStmt): T;
   fnDefStmt(stmt: FnDefStmt): T;
   conditionalStmt(stmt: ConditionalStmt): T;
@@ -1553,6 +1554,7 @@ enum NodeKind {
   condStmt,
   printStmt,
   whileStmt,
+  returnStmt,
 }
 
 /**
@@ -2067,6 +2069,33 @@ const blockStmt = (statements: Statement[]) => (
 );
 
 /**
+ * A node corresponding to a return
+ * statement.
+ */
+class ReturnStmt extends Statement {
+  $value: Expr;
+  $keyword: Token;
+  constructor(value: Expr, keyword: Token) {
+    super();
+    this.$value = value;
+    this.$keyword = keyword;
+  }
+  accept<T>(visitor: Visitor<T>): T {
+    return visitor.returnStmt(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.returnStmt;
+  }
+}
+
+/**
+ * Returns a new return statement node.
+ */
+const returnStmt = (value: Expr, keyword: Token) => (
+  new ReturnStmt(value, keyword)
+);
+
+/**
  * Returns true, and asserts,
  * that the given node is a block statement node.
  */
@@ -2574,6 +2603,42 @@ function syntaxAnalysis(code: string) {
     }
   };
 
+  const commaSeparatedExprs = () => {
+    const exprs: Expr[] = [];
+    do {
+      const e = expr();
+      if (e.isLeft()) {
+        return e;
+      }
+      const element = e.unwrap();
+      exprs.push(element);
+    } while (state.nextIs(TokenType.COMMA));
+    return right(exprs);
+  };
+
+  /**
+   * Parses a function call expression.
+   */
+  const fnCall: ParseRule<Expr> = (op, lastNode) => {
+    const callee = lastNode;
+    let args: Expr[] = [];
+    if (!state.check(TokenType.RIGHT_PAREN)) {
+      const argExprs = commaSeparatedExprs();
+      if (argExprs.isLeft()) {
+        return argExprs;
+      }
+      args = argExprs.unwrap();
+    }
+    if (!state.nextIs(TokenType.RIGHT_PAREN)) {
+      return state.error(
+        `Expected a “)” to close the arguments`,
+        `parsing a function call`,
+      );
+    }
+    const out = callExpr(callee, args, op);
+    return state.expr(out);
+  };
+
   /**
    * Alias for BP.NONE, corresponding
    * to a binding power of nothing.
@@ -2645,7 +2710,7 @@ function syntaxAnalysis(code: string) {
     [TokenType.GREATER_EQUAL]: [___, compare, BP.RELATION],
 
     // Parenthesized Expressions
-    [TokenType.LEFT_PAREN]: [primary, ___, BP.CALL],
+    [TokenType.LEFT_PAREN]: [primary, fnCall, BP.CALL],
     [TokenType.RIGHT_PAREN]: [___, ___, ___o],
 
     // Not handled by the Pratt parsing function (`expr`).
@@ -2665,10 +2730,10 @@ function syntaxAnalysis(code: string) {
     [TokenType.CLASS]: [___, ___, ___o],
     [TokenType.IF]: [___, ___, ___o], // Handled by `ifStatement`
     [TokenType.ELSE]: [___, ___, ___o], // Handled by `ifStatement`
-    [TokenType.FOR]: [___, ___, ___o],
+    [TokenType.FOR]: [___, ___, ___o], // Handled by `forLoopStatement`
     [TokenType.FN]: [___, ___, ___o],
     [TokenType.PRINT]: [___, ___, ___o], // Handled by `printStatement`
-    [TokenType.RETURN]: [___, ___, ___o],
+    [TokenType.RETURN]: [___, ___, ___o], // Handled by `returnStatement`
     [TokenType.SUPER]: [___, ___, ___o],
     [TokenType.THIS]: [___, ___, ___o],
     [TokenType.LET]: [___, ___, ___o], // Handled by `varDefStatement`
@@ -2755,6 +2820,21 @@ function syntaxAnalysis(code: string) {
     return state.statement(
       varDef(name, value.$expression, type === TokenType.VAR),
     );
+  };
+
+  /**
+   * Parses a return statement.
+   */
+  const returnStatement = () => {
+    const returnKeyword = state.$current;
+    const out = expressionStatement();
+    if (out.isLeft()) {
+      return out;
+    }
+    return state.statement(returnStmt(
+      out.unwrap().$expression,
+      returnKeyword,
+    ));
   };
 
   /**
@@ -2961,6 +3041,8 @@ function syntaxAnalysis(code: string) {
       return blockStatement();
     } else if (state.nextIs(TokenType.LET)) {
       return varDefStatement(TokenType.LET);
+    } else if (state.nextIs(TokenType.RETURN)) {
+      return returnStatement();
     } else if (state.nextIs(TokenType.VAR)) {
       return varDefStatement(TokenType.VAR);
     } else if (state.nextIs(TokenType.PRINT)) {
@@ -2993,9 +3075,7 @@ function syntaxAnalysis(code: string) {
 }
 
 const test = syntaxAnalysis(`
-for (var i = 0; i < 5; i=i+1) {
-  let j = 2;
-}
+let x = f(2);
 `);
 const out = test.statements();
 print(treed(out));

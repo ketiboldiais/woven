@@ -754,6 +754,11 @@ class Err extends Error {
     this.$line = line;
     this.$column = column;
   }
+  print() {
+    const out =
+      `On line ${this.$line}, column ${this.$column}, while ${this.$phase}, a ${this.$type} occurred: ${this.$message}`;
+    return out;
+  }
 }
 
 // To avoid having to write `new` all the time,
@@ -2318,9 +2323,9 @@ const exprStmt = (expression: Expr) => (
  */
 class FnDefStmt extends Statement {
   $name: Token;
-  $params: Token[];
+  $params: VariableExpr[];
   $body: Statement[];
-  constructor(name: Token, params: Token[], body: Statement[]) {
+  constructor(name: Token, params: VariableExpr[], body: Statement[]) {
     super();
     this.$name = name;
     this.$params = params;
@@ -2338,7 +2343,7 @@ class FnDefStmt extends Statement {
  * Returns a new function definition statement
  * node.
  */
-const fnDefStmt = (name: Token, params: Token[], body: Statement[]) => (
+const fnDefStmt = (name: Token, params: VariableExpr[], body: Statement[]) => (
   new FnDefStmt(name, params, body)
 );
 
@@ -2521,6 +2526,7 @@ class ParserState {
   canAssumeSemicolon() {
     return (
       this.$peek.is(TokenType.END) ||
+      this.$peek.is(TokenType.RIGHT_BRACE) ||
       this.atEnd()
     );
   }
@@ -3105,7 +3111,7 @@ function syntaxAnalysis(code: string) {
         phase,
       );
     }
-    const params: Token<string>[] = [];
+    const params: VariableExpr[] = [];
     if (!state.$peek.is(TokenType.RIGHT_PAREN)) {
       do {
         const expression = state.next();
@@ -3115,7 +3121,7 @@ function syntaxAnalysis(code: string) {
             phase,
           );
         }
-        params.push(expression);
+        params.push(variable(expression));
       } while (state.nextIs(TokenType.COMMA));
     }
     if (!state.nextIs(TokenType.RIGHT_PAREN)) {
@@ -3329,6 +3335,7 @@ function syntaxAnalysis(code: string) {
         `parsing a block statement`,
       );
     }
+    state.nextIs(TokenType.SEMICOLON);
     return state.statement(blockStmt(statements));
   };
 
@@ -3355,7 +3362,7 @@ function syntaxAnalysis(code: string) {
     }
     return state.error(
       `Expected a “;” to end the statement`,
-      `expression statement`,
+      `parsing an expression statement`,
     );
   };
 
@@ -3408,10 +3415,31 @@ function syntaxAnalysis(code: string) {
   };
 }
 
-type RuntimeValue = Primitive;
+type RuntimeValue = Primitive | Fn | ReturnValue;
 
 class Environment<T> {
-  $values: Map<string, T> = new Map<string, T>();
+  $values: Map<string, T>;
+  $enclosing: Environment<T> | null;
+  constructor(enclosing: Environment<T> | null) {
+    this.$values = new Map<string, T>();
+    this.$enclosing = enclosing;
+  }
+  ancestor(distance: number) {
+    // @ts-ignore
+    let env = this;
+    for (let i = 0; i < distance; i++) {
+      // @ts-ignore
+      env = this.$enclosing;
+    }
+    return env;
+  }
+  assignAt(distance: number, name: string, value: T): T {
+    this.ancestor(distance).$values.set(name, value);
+    return value;
+  }
+  getAt(distance: number, name: string): T {
+    return this.ancestor(distance).$values.get(name)!;
+  }
   /**
    * Creates a new record in this environment
    * mapping the given name to given value.
@@ -3430,6 +3458,9 @@ class Environment<T> {
       this.$values.set(name.$lexeme, value);
       return value;
     }
+    if (this.$enclosing !== null) {
+      return this.$enclosing.assign(name, value);
+    }
     throw runtimeError(
       `Assigning to an undefined variable “${name.$lexeme}”`,
       `resolving an assignment`,
@@ -3442,9 +3473,12 @@ class Environment<T> {
    * name. A runtime error is thrown if
    * no such name exists.
    */
-  get(name: Token) {
+  get(name: Token): T {
     if (this.$values.has(name.$lexeme)) {
       return this.$values.get(name.$lexeme)!;
+    }
+    if (this.$enclosing !== null) {
+      return this.$enclosing.get(name);
     }
     throw runtimeError(
       `Undefined variable name “${name.$lexeme}”`,
@@ -3458,7 +3492,306 @@ class Environment<T> {
 /**
  * Returns a new environment.
  */
-const env = <T>() => (new Environment<T>());
+const env = <T>(
+  enclosing: Environment<T> | null,
+) => (new Environment<T>(enclosing));
+
+interface Resolvable<X = any> {
+  resolve(expr: Expr, i: number): X;
+}
+
+enum FunctionType {
+  NONE,
+  FUNCTION,
+  METHOD,
+  INITIALIZER,
+}
+
+class Resolver<T extends Resolvable = Resolvable> implements Visitor<void> {
+  private $scopes: (Map<string, boolean>)[] = [];
+  private scopesIsEmpty() {
+    return this.$scopes.length === 0;
+  }
+  private $currentFunction: FunctionType = FunctionType.NONE;
+  private beginScope() {
+    this.$scopes.push(new Map());
+  }
+  private endScope() {
+    this.$scopes.pop();
+  }
+  private resolve(node: ASTNode) {
+    node.accept(this);
+  }
+  private resolveEach(nodes: ASTNode[]) {
+    for (let i = 0; i < nodes.length; i++) {
+      this.resolve(nodes[i]);
+    }
+    return;
+  }
+  private $client: T;
+  constructor(client: T) {
+    this.$client = client;
+  }
+  private resolveLocal(node: Expr, name: string) {
+    for (let i = this.$scopes.length - 1; i >= 0; i--) {
+      const scope = this.$scopes[i];
+      if (scope !== undefined && scope.has(name)) {
+        this.$client.resolve(node, this.$scopes.length - 1 - i);
+        return;
+      }
+    }
+  }
+  private peek(): Map<string, boolean> {
+    return this.$scopes[this.$scopes.length - 1];
+  }
+  private declare(name: Token) {
+    if (this.$scopes.length === 0) {
+      return;
+    }
+    const scope = this.peek();
+    if (scope.has(name.$lexeme)) {
+      throw runtimeError(
+        `Encountered a name collision. The variable “${name.$lexeme}” has already been declared in the current scope.`,
+        `resolving a declaration`,
+        name.$line,
+        name.$column,
+      );
+    }
+    scope.set(name.$lexeme, false);
+  }
+  private define(name: string) {
+    if (this.$scopes.length === 0) {
+      return;
+    }
+    const peek = this.peek();
+    peek.set(name, true);
+  }
+
+  intExpr(expr: IntExpr): void {
+    return;
+  }
+  floatExpr(expr: FloatExpr): void {
+    return;
+  }
+  fracExpr(expr: FracExpr): void {
+    return;
+  }
+  scinumExpr(expr: ScinumExpr): void {
+    return;
+  }
+  numConstExpr(expr: NumericConstExpr): void {
+    return;
+  }
+  nilExpr(expr: NilExpr): void {
+    return;
+  }
+  stringExpr(expr: StringExpr): void {
+    return;
+  }
+  booleanExpr(expr: BooleanExpr): void {
+    return;
+  }
+  indexingExpr(expr: IndexingExpr): void {
+    this.resolve(expr.$list);
+    this.resolve(expr.$index);
+    return;
+  }
+  vectorExpr(expr: VectorExpr): void {
+    this.resolveEach(expr.$elements);
+    return;
+  }
+  matrixExpr(expr: MatrixExpr): void {
+    this.resolveEach(expr.$vectors);
+    return;
+  }
+  assignExpr(expr: AssignExpr): void {
+    this.resolve(expr.$value);
+    this.resolveLocal(expr, expr.$name.$name.$lexeme);
+    return;
+  }
+  binaryExpr(expr: BinaryExpr): void {
+    this.resolve(expr.$left);
+    this.resolve(expr.$right);
+    return;
+  }
+  logicalBinaryExpr(expr: LogicalBinaryExpr): void {
+    this.resolve(expr.$left);
+    this.resolve(expr.$right);
+    return;
+  }
+  relationExpr(expr: RelationExpr): void {
+    this.resolve(expr.$left);
+    this.resolve(expr.$right);
+    return;
+  }
+  callExpr(expr: CallExpr): void {
+    this.resolve(expr.$callee);
+    this.resolveEach(expr.$args);
+    return;
+  }
+  groupExpr(expr: GroupExpr): void {
+    this.resolve(expr.$inner);
+    return;
+  }
+  unaryExpr(expr: UnaryExpr): void {
+    this.resolve(expr.$arg);
+    return;
+  }
+  variableExpr(expr: VariableExpr): void {
+    const name = expr.$name;
+    if (!this.scopesIsEmpty() && this.peek().get(name.$lexeme) === false) {
+      throw runtimeError(
+        `The user is attempting to read the variable “${expr.$name.$lexeme}” from its own initializer. This syntax has no semantic.`,
+        `resolving a variable expression (identifier)`,
+        expr.$name.$line,
+        expr.$name.$column,
+      );
+    }
+    this.resolveLocal(expr, expr.$name.$lexeme);
+    return;
+  }
+  printStmt(stmt: PrintStmt): void {
+    this.resolve(stmt.$expr);
+    return;
+  }
+  varDefStmt(stmt: VarDefStmt): void {
+    this.declare(stmt.$name);
+    this.resolve(stmt.$value);
+    this.define(stmt.$name.$lexeme);
+    return;
+  }
+  whileStmt(stmt: WhileStmt): void {
+    this.resolve(stmt.$condition);
+    this.resolve(stmt.$body);
+    return;
+  }
+  blockStmt(stmt: BlockStmt): void {
+    this.beginScope();
+    this.resolveEach(stmt.$statements);
+    this.endScope();
+    return;
+  }
+  returnStmt(stmt: ReturnStmt): void {
+    if (this.$currentFunction === FunctionType.NONE) {
+      throw runtimeError(
+        `Encountered the “return” keyword at the top-level. This syntax has no semantic.`,
+        `resolving a return statement`,
+        stmt.$keyword.$line,
+        stmt.$keyword.$column,
+      );
+    }
+    this.resolve(stmt.$value);
+    return;
+  }
+  expressionStmt(stmt: ExprStmt): void {
+    this.resolve(stmt.$expression);
+    return;
+  }
+  private resolveFn(node: FnDefStmt, type: FunctionType) {
+    const enclosingFunction = this.$currentFunction;
+    this.$currentFunction = type;
+    this.beginScope();
+    for (let i = 0; i < node.$params.length; i++) {
+      this.declare(node.$params[i].$name);
+      this.define(node.$params[i].$name.$lexeme);
+    }
+    this.resolveEach(node.$body);
+    this.endScope();
+    this.$currentFunction = enclosingFunction;
+    return;
+  }
+  fnDefStmt(stmt: FnDefStmt): void {
+    this.declare(stmt.$name);
+    this.define(stmt.$name.$lexeme);
+    this.resolveFn(stmt, FunctionType.FUNCTION);
+    return;
+  }
+  conditionalStmt(stmt: ConditionalStmt): void {
+    this.resolve(stmt.$condition);
+    this.resolve(stmt.$then);
+    this.resolve(stmt.$else);
+    return;
+  }
+  resolved(statements: Statement[]) {
+    try {
+      for (let i = 0; i < statements.length; i++) {
+        this.resolve(statements[i]);
+      }
+      return right(1);
+    } catch (error) {
+      return left(error as Err);
+    }
+  }
+}
+const resolvable = (client: Resolvable) => (
+  new Resolver(client)
+);
+
+/**
+ * A wrapper for a return value.
+ */
+class ReturnValue {
+  $value: RuntimeValue;
+  constructor(value: RuntimeValue) {
+    this.$value = value;
+  }
+}
+
+/**
+ * Returns a new ReturnedValue.
+ */
+const returnValue = (value: RuntimeValue) => (
+  new ReturnValue(value)
+);
+
+/**
+ * An object corresponding to a runtime
+ * function.
+ */
+class Fn {
+  private $closure: Environment<RuntimeValue>;
+  private $declaration: FnDefStmt;
+  constructor(closure: Environment<RuntimeValue>, declaration: FnDefStmt) {
+    this.$closure = closure;
+    this.$declaration = declaration;
+  }
+  call(interpreter: Interpreter, args: RuntimeValue[]) {
+    const environment = env(this.$closure);
+    for (let i = 0; i < this.$declaration.$params.length; i++) {
+      environment.define(
+        this.$declaration.$params[i].$name.$lexeme,
+        args[i],
+      );
+    }
+    try {
+      const out = interpreter.executeBlock(
+        this.$declaration.$body,
+        environment,
+      );
+      return out;
+    } catch (error) {
+      if (error instanceof ReturnValue) {
+        return error.$value;
+      } else {
+        throw error;
+      }
+    }
+  }
+}
+/**
+ * Returns true, and asserts,
+ * if the given `x` is an Fn object.
+ */
+const isFn = (x: any): x is Fn => (
+  x instanceof Fn
+);
+
+/**
+ * Returns a new runtime function.
+ */
+const fn = (closure: Environment<RuntimeValue>, declaration: FnDefStmt) => (
+  new Fn(closure, declaration)
+);
 
 /**
  * Returns the assumed truth value
@@ -3484,9 +3817,24 @@ const truthValue = (value: RuntimeValue) => {
  * An object that executes a given syntax tree.
  */
 class Interpreter implements Visitor<RuntimeValue> {
+  $global: Environment<RuntimeValue>;
   $env: Environment<RuntimeValue>;
+  $locals: Map<Expr, number>;
+  resolve(expression: Expr, depth: number) {
+    this.$locals.set(expression, depth);
+  }
   constructor() {
-    this.$env = env();
+    this.$global = env(null);
+    this.$env = this.$global;
+    this.$locals = new Map();
+  }
+  lookupVariable(name: Token, expr: Expr) {
+    const distance = this.$locals.get(expr);
+    if (distance !== undefined) {
+      return this.$env.getAt(distance, name.$lexeme);
+    } else {
+      return this.$global.get(name);
+    }
   }
   interpret(statements: Statement[]): Either<Err, RuntimeValue> {
     try {
@@ -3500,7 +3848,7 @@ class Interpreter implements Visitor<RuntimeValue> {
       return left(error as Err);
     }
   }
-  evaluate(node: ASTNode) {
+  evaluate(node: ASTNode): RuntimeValue {
     return node.accept(this);
   }
   intExpr(expr: IntExpr): RuntimeValue {
@@ -3537,7 +3885,14 @@ class Interpreter implements Visitor<RuntimeValue> {
     throw new Error("Method not implemented.");
   }
   assignExpr(expr: AssignExpr): RuntimeValue {
-    throw new Error("Method not implemented.");
+    const value = this.evaluate(expr.$value);
+    const distance = this.$locals.get(expr);
+    if (distance !== undefined) {
+      this.$env.assignAt(distance, expr.$name.$name.$lexeme, value);
+    } else {
+      this.$global.assign(expr.$name.$name, value);
+    }
+    return value;
   }
   binaryExpr(expr: BinaryExpr): RuntimeValue {
     let left = this.evaluate(expr.$left);
@@ -3612,7 +3967,20 @@ class Interpreter implements Visitor<RuntimeValue> {
     throw new Error("Method not implemented.");
   }
   callExpr(expr: CallExpr): RuntimeValue {
-    throw new Error("Method not implemented.");
+    const callee = this.evaluate(expr.$callee);
+    const args: RuntimeValue[] = [];
+    for (let i = 0; i < expr.$args.length; i++) {
+      args.push(this.evaluate(expr.$args[i]));
+    }
+    if (isFn(callee)) {
+      return callee.call(this, args);
+    }
+    throw runtimeError(
+      `A value was called, but the value is not a function`,
+      `evaluating a call expression`,
+      expr.$paren.$line,
+      expr.$paren.$column,
+    );
   }
   groupExpr(expr: GroupExpr): RuntimeValue {
     return this.evaluate(expr.$inner);
@@ -3637,8 +4005,7 @@ class Interpreter implements Visitor<RuntimeValue> {
     throw new Error("Method not implemented.");
   }
   variableExpr(expr: VariableExpr): RuntimeValue {
-    const out = this.$env.get(expr.$name);
-    return out;
+    return this.lookupVariable(expr.$name, expr);
   }
   printStmt(stmt: PrintStmt): RuntimeValue {
     const value = this.evaluate(stmt.$expr);
@@ -3651,22 +4018,51 @@ class Interpreter implements Visitor<RuntimeValue> {
     return value;
   }
   whileStmt(stmt: WhileStmt): RuntimeValue {
-    throw new Error("Method not implemented.");
+    let out: RuntimeValue = null;
+    while (truthValue(this.evaluate(stmt.$condition))) {
+      out = this.evaluate(stmt.$body);
+    }
+    return out;
+  }
+  executeBlock(
+    statements: Statement[],
+    environment: Environment<RuntimeValue>,
+  ) {
+    const previous = this.$env;
+    try {
+      this.$env = environment;
+      let result: RuntimeValue = null;
+      const S = statements.length;
+      for (let i = 0; i < S; i++) {
+        result = this.evaluate(statements[i]);
+      }
+      return result;
+    } finally {
+      this.$env = previous;
+    }
   }
   blockStmt(stmt: BlockStmt): RuntimeValue {
-    throw new Error("Method not implemented.");
+    const environment = env(this.$env);
+    return this.executeBlock(stmt.$statements, environment);
   }
   returnStmt(stmt: ReturnStmt): RuntimeValue {
-    throw new Error("Method not implemented.");
+    const value = this.evaluate(stmt.$value);
+    throw returnValue(value);
   }
   expressionStmt(stmt: ExprStmt): RuntimeValue {
     return this.evaluate(stmt.$expression);
   }
   fnDefStmt(stmt: FnDefStmt): RuntimeValue {
-    throw new Error("Method not implemented.");
+    const f = fn(this.$env, stmt);
+    this.$env.define(stmt.$name.$lexeme, f);
+    return f;
   }
   conditionalStmt(stmt: ConditionalStmt): RuntimeValue {
-    throw new Error("Method not implemented.");
+    if (truthValue(this.evaluate(stmt.$condition))) {
+      return this.evaluate(stmt.$then);
+    } else {
+      return this.evaluate(stmt.$else);
+    }
   }
 }
 
@@ -3681,12 +4077,23 @@ const compiler = () => {
     execute(code: string) {
       const ast = syntaxAnalysis(code).statements();
       if (ast.isLeft()) {
-        return ast;
+        const erm = ast.unwrap().print();
+        print(erm);
+        return erm;
       }
       const interpreter = new Interpreter();
-      const out = interpreter.interpret(ast.unwrap());
+      const statements = ast.unwrap();
+      const resolved = resolvable(interpreter).resolved(statements);
+      if (resolved.isLeft()) {
+        const erm = resolved.unwrap().print();
+        print(erm);
+        return erm;
+      }
+      const out = interpreter.interpret(statements);
       if (out.isLeft()) {
-        return out;
+        const erm = out.unwrap().print();
+        print(erm);
+        return erm;
       }
       return out.unwrap();
     },
@@ -3694,6 +4101,8 @@ const compiler = () => {
 };
 
 const j = compiler().execute(`
-print 5!
+fn f(x) = x^2;
+var j = f(3);
+print j;
 `);
 // print(j);

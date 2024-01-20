@@ -1,7 +1,117 @@
+const print = console.log;
 const { floor } = Math;
 const MAX_INT = Number.MAX_SAFE_INTEGER;
 const MAX_FLOAT = Number.MAX_VALUE;
-/** At the parsing stage, all parsed node results are kept in an `Either` type (either an AST node) or an Err (error) object. We want to avoid throwing as much as possible for optimal parsing. */
+
+// § Tree Printer
+/**
+ * In later sections, it will be useful to print
+ * a pretty form of a given object tree.
+ * We define that function here.
+ */
+
+/**
+ * Returns a pretty-pritn string of the
+ * given object.
+ */
+export const treed = (obj: Object) => {
+  const makePrefix = (key: string, last: boolean) => {
+    let str = last ? "└" : "├";
+    if (key) {
+      str += "─ ";
+    } else {
+      str += "──┐";
+    }
+    return str;
+  };
+  const filterKeys = (obj: Object, hideFunctions: boolean) => {
+    const keys = [];
+    for (var branch in obj) {
+      if (!obj.hasOwnProperty(branch)) {
+        continue;
+      }
+      // @ts-ignore
+      if (hideFunctions && ((typeof obj[branch]) === "function")) {
+        continue;
+      }
+      keys.push(branch);
+    }
+    return keys;
+  };
+  const growBranch = (
+    key: string,
+    root: Object,
+    last: boolean,
+    lastStates: ([Object, boolean])[],
+    showValues: boolean,
+    hideFunctions: boolean,
+    callback: (L: string) => void,
+  ) => {
+    let line = "",
+      index = 0,
+      lastKey,
+      // @ts-ignore
+      circular,
+      lastStatesCopy = lastStates.slice(0);
+
+    if (lastStatesCopy.push([root, last]) && lastStates.length > 0) {
+      lastStates.forEach(function (lastState, idx) {
+        if (idx > 0) {
+          line += (lastState[1] ? " " : "│") + "  ";
+        }
+        // @ts-ignore
+        if (!circular && lastState[0] === root) {
+          circular = true;
+        }
+      });
+      line += makePrefix(key, last) + key;
+      if (showValues && typeof root !== "object") {
+        line += ": " + root;
+      }
+      circular && (line += " (circular ref.)");
+      callback(line);
+    }
+
+    if (!circular && typeof root === "object") {
+      let keys = filterKeys(root, hideFunctions);
+      keys.forEach(function (branch) {
+        lastKey = ++index === keys.length;
+        growBranch(
+          branch,
+          // @ts-ignore
+          root[branch],
+          lastKey,
+          lastStatesCopy,
+          showValues,
+          hideFunctions,
+          callback,
+        );
+      });
+    }
+  };
+  const str = () => {
+    let tree = "";
+    growBranch(
+      ".",
+      obj,
+      false,
+      [],
+      true,
+      true,
+      (line) => tree += line + "\n",
+    );
+    return tree;
+  };
+
+  return str();
+};
+
+/**
+ * At the parsing stage, all parsed node results
+ * are kept in an `Either` type (either an AST node)
+ * or an Err (error) object. We want to avoid
+ * throwing as much as possible for optimal parsing.
+ */
 type Either<A, B> = Left<A> | Right<B>;
 
 /** A box type corresponding to failure. */
@@ -77,9 +187,15 @@ const left = <T>(x: T): Left<T> => new Left(x);
 
 /** Returns a new right. */
 const right = <T>(x: T): Right<T> => new Right(x);
+
 /**
- * A class corresponding to a fraction.
+ * § Runtime Values
+ *
+ * What follows are runtime values that will be associated
+ * with particular nodes.
  */
+
+/** A class corresponding to a fraction.  */
 class Fraction {
   /** The numerator of this fraction. */
   $n: number;
@@ -91,6 +207,8 @@ class Fraction {
   }
 }
 
+// § Runtime Value: Fraction
+
 /**
  * Returns a new fraction.
  * @param n - The fraction’s numerator.
@@ -100,6 +218,11 @@ const frac = (n: number, d: number) => (
   new Fraction(n, d)
 );
 
+// § Runtime Value: Scientific Number
+
+/**
+ * A class corresponding to a scientific number.
+ */
 class Scinum {
   $b: number;
   $e: number;
@@ -112,7 +235,7 @@ const scinum = (base: number, exponent: number) => (
   new Scinum(base, exponent)
 );
 
-enum TOKEN {
+enum TokenType {
   /** Delimiter token: `(` */
   LEFT_PAREN,
   /** Delimiter token: `)` */
@@ -202,15 +325,8 @@ enum TOKEN {
   FLOAT,
   /** Literal token: scientific number */
   SCIENTIFIC_NUMBER,
-  /** Literal token: big integer */
-  BIG_INT,
-  /** Literal token: big fraction */
-  BIG_FRACTION,
   /** Literal token: fraction */
   FRACTION,
-  /** Literal token: complex number */
-  COMPLEX,
-
   /** Literal token: string */
   STRING,
 
@@ -244,13 +360,10 @@ enum TOKEN {
  * A token type corresponding to a number.
  */
 type NumberTokenType =
-  | TOKEN.INT
-  | TOKEN.FLOAT
-  | TOKEN.SCIENTIFIC_NUMBER
-  | TOKEN.FRACTION
-  | TOKEN.BIG_INT
-  | TOKEN.BIG_FRACTION
-  | TOKEN.COMPLEX;
+  | TokenType.INT
+  | TokenType.FLOAT
+  | TokenType.SCIENTIFIC_NUMBER
+  | TokenType.FRACTION;
 
 /**
  * What follows are global constants.
@@ -259,28 +372,28 @@ const PI = Math.PI;
 const E = Math.E;
 
 /** Tokens have a literal value, but they must be a Primitive type. */
-type Primitive = number | string | boolean | null | Fraction | Scinum;
+type Primitive = number | string | boolean | null | Fraction | Scinum | Err;
 
 /** A class corresponding to a token. */
-class Token<T extends TOKEN = any, L extends Primitive = any> {
+class Token<L extends Primitive = any> {
   isRightDelimiter() {
     return (
-      this.$type === TOKEN.RIGHT_PAREN ||
-      this.$type === TOKEN.RIGHT_BRACKET ||
-      this.$type === TOKEN.RIGHT_BRACE
+      this.$type === TokenType.RIGHT_PAREN ||
+      this.$type === TokenType.RIGHT_BRACKET ||
+      this.$type === TokenType.RIGHT_BRACE
     );
   }
-  is(type: TOKEN) {
+  is(type: TokenType) {
     return this.$type === type;
   }
   /** The token’s type. */
-  $type: T;
+  $type: TokenType;
 
   /** Returns a copy of this token with the provided token type. */
-  type<K extends TOKEN>(tokenType: K) {
+  type<K extends TokenType>(tokenType: K) {
     const out = this.clone();
     out.$type = tokenType as any;
-    return out as any as Token<K, L>;
+    return out as any as Token<L>;
   }
 
   /** The line where this token first occurs. */
@@ -320,16 +433,26 @@ class Token<T extends TOKEN = any, L extends Primitive = any> {
   literal<X extends Primitive>(literal: X) {
     const out = this.clone();
     out.$literal = literal as any;
-    return out as any as Token<T, X>;
+    return out as any as Token<X>;
   }
 
   toString() {
-    const typename = TOKEN[this.$type];
+    const typename = TokenType[this.$type];
     return `[${typename} “${this.$lexeme}” L${this.$line} C${this.$column}]`;
   }
 
+  /**
+   * Returns true if this
+   * token is an error token.
+   */
+  isErrorToken(): this is Token<Err> {
+    return (
+      this.$type === TokenType.ERROR
+    );
+  }
+
   constructor(
-    type: T,
+    type: TokenType,
     lexeme: string,
     literal: L,
     line: number,
@@ -340,6 +463,16 @@ class Token<T extends TOKEN = any, L extends Primitive = any> {
     this.$line = line;
     this.$column = column;
     this.$literal = literal;
+  }
+
+  /**
+   * Returns true, and asserts,
+   * that this token is an integer token.
+   */
+  isNumericToken(): this is Token<number> {
+    return (this.$type === TokenType.INT) || (
+      this.$type === TokenType.FLOAT
+    );
   }
 
   /**
@@ -356,9 +489,12 @@ class Token<T extends TOKEN = any, L extends Primitive = any> {
     return out;
   }
 
-  static empty: Token<TOKEN, any> = new Token(TOKEN.EMPTY, "", null, -1, -1);
+  static empty: Token<any> = new Token(TokenType.EMPTY, "", null, -1, -1);
+  static END() {
+    return new Token(TokenType.END, "END", null, -1, -1);
+  }
   isEmpty() {
-    return this.$type === TOKEN.EMPTY;
+    return this.$type === TokenType.EMPTY;
   }
 }
 
@@ -366,7 +502,7 @@ class Token<T extends TOKEN = any, L extends Primitive = any> {
  * Returns a new token.
  *
  * @param type
- * - The {@link TOKEN} type.
+ * - The {@link TokenType} type.
  * @param lexeme
  * - The lexeme associated within this token.
  * @param literal
@@ -378,7 +514,7 @@ class Token<T extends TOKEN = any, L extends Primitive = any> {
  * read (specifically, the column where the lexeme starts).
  */
 const token = <T extends Primitive>(
-  type: TOKEN,
+  type: TokenType,
   lexeme: string,
   literal: T,
   line: number,
@@ -387,19 +523,10 @@ const token = <T extends Primitive>(
   new Token(type, lexeme, literal, line, column)
 );
 
-/** Returns true if the string `char` is a Latin or Greek character. */
-const isLatinGreek = (
-  char: string,
-) => (/^[a-zA-Z_$\u00C0-\u02AF\u0370-\u03FF\u2100-\u214F]$/.test(char));
-
-/** Returns true if the given string `char` is within the unicode range `∀-⋿`. Else, returns false. */
-const isMathSymbol = (char: string) => /^[∀-⋿]/u.test(char);
-
-/** Returns true if the given string `char` is a digit. Else, returns false. */
-const isDigit = (char: string) => "0" <= char && char <= "9";
-
 /**
- * Errors are classified by type.
+ * § Error Classes
+ * Before we proceed to implementing the compiler, we will
+ * implement our error classes. Errors are classified by type.
  *
  * 1. `lexical-error` : An error encountered
  *     during lexical analysis (i.e., scanning).
@@ -414,6 +541,11 @@ const isDigit = (char: string) => "0" <= char && char <= "9";
  * 5. `runtime-error` : Any error that does not fall under
  *     the first four categories above.
  */
+
+/**
+ * To ensure our errors are always of a specific type,
+ * we will define a type called `ErrorType`.
+ */
 type ErrorType =
   | "lexical-error"
   | "syntax-error"
@@ -421,6 +553,10 @@ type ErrorType =
   | "semantic-error"
   | "runtime-error";
 
+/**
+ * Now we define a class that corresponds to
+ * an error object.
+ */
 class Err extends Error {
   /**
    * The type of this error. All errors fall under
@@ -452,30 +588,26 @@ class Err extends Error {
    */
   $column: number;
 
-  /**
-   * A message corresponding to a possible
-   * way to fix this error.
-   */
-  $fix: string;
   constructor(
     message: string,
     type: ErrorType,
     phase: string,
     line: number,
     column: number,
-    fix: string,
   ) {
     super(message);
     this.$type = type;
     this.$phase = phase;
     this.$line = line;
     this.$column = column;
-    this.$fix = fix;
   }
 }
 
+// To avoid having to write `new` all the time,
+// we will define an error factory function.
+
 /**
- * Returns a error factory. This function
+ * This function
  * creates a function that consructs a specific
  * type of error.
  *
@@ -494,8 +626,7 @@ const errorFactory = (type: ErrorType) =>
   phase: string,
   line: number,
   column: number,
-  fix: string,
-) => (new Err(message, type, phase, line, column, fix));
+) => (new Err(message, type, phase, line, column));
 
 /** Returns a new lexical error. */
 const lexicalError = errorFactory("lexical-error");
@@ -511,6 +642,35 @@ const semanticError = errorFactory("semantic-error");
 
 /** Returns a new runtime error. */
 const runtimeError = errorFactory("runtime-error");
+
+/**
+ * § Scanning
+ * Now that we've defined the error classes, we can proceed
+ * to implementing our scanner. Before we do so, however, we
+ * will define some regex helper functions.
+ */
+
+/**
+ * This function returns true if the given
+ * `char` is a Latin or Greek character. This is used
+ * in the scanner to quickly identify potential identifiers
+ * or keywords.
+ */
+const isLatinGreek = (
+  char: string,
+) => (/^[a-zA-Z_$\u00C0-\u02AF\u0370-\u03FF\u2100-\u214F]$/.test(char));
+
+/**
+ * This function returns true if the given
+ * `char` is a math symbol.
+ */
+const isMathSymbol = (char: string) => /^[∀-⋿]/u.test(char);
+
+/**
+ * This function returns true if the given `char` is
+ * a digit (specifically, a Hindu-Arabic numeral).
+ */
+const isDigit = (char: string) => "0" <= char && char <= "9";
 
 /**
  * Conducts a lexical analysis of the given Woven
@@ -611,7 +771,7 @@ export function lexicalAnalysis(code: string) {
    * this token. Defaults to null.
    */
   const newToken = (
-    type: TOKEN,
+    type: TokenType,
     lexeme: string = "",
     literal: Primitive = null,
   ) => {
@@ -675,15 +835,14 @@ export function lexicalAnalysis(code: string) {
    * @param message - A message describing what the error is.
    * @param phase - At what point during scanning did this error occur.
    */
-  const errorToken = (message: string, phase: string, fix: string) => {
-    const out = token(TOKEN.ERROR, "", null, $line, $column);
+  const errorToken = (message: string, phase: string) => {
     $error = lexicalError(
       message,
       phase,
       $line,
       $column,
-      fix,
     );
+    const out = token(TokenType.ERROR, "", $error, $line, $column);
     return out;
   };
 
@@ -702,69 +861,69 @@ export function lexicalAnalysis(code: string) {
     // If it is a keyword, return it.
     switch (lexeme) {
       case "this":
-        return newToken(TOKEN.THIS);
+        return newToken(TokenType.THIS);
       case "super":
-        return newToken(TOKEN.SUPER);
+        return newToken(TokenType.SUPER);
       case "class":
-        return newToken(TOKEN.CLASS);
+        return newToken(TokenType.CLASS);
       case "false":
-        return newToken(TOKEN.FALSE).literal(false);
+        return newToken(TokenType.FALSE).literal(false);
       case "true":
-        return newToken(TOKEN.TRUE).literal(true);
+        return newToken(TokenType.TRUE).literal(true);
       case "NAN":
-        return newToken(TOKEN.NAN).literal(NaN);
+        return newToken(TokenType.NAN).literal(NaN);
       case "Inf":
-        return newToken(TOKEN.INF).literal(Infinity);
+        return newToken(TokenType.INF).literal(Infinity);
       case "pi":
-        return newToken(TOKEN.NUMERIC_CONSTANT).literal(PI);
+        return newToken(TokenType.NUMERIC_CONSTANT).literal(PI);
       case "e":
-        return newToken(TOKEN.NUMERIC_CONSTANT).literal(E);
+        return newToken(TokenType.NUMERIC_CONSTANT).literal(E);
       case "return":
-        return newToken(TOKEN.RETURN);
+        return newToken(TokenType.RETURN);
       case "while":
-        return newToken(TOKEN.WHILE);
+        return newToken(TokenType.WHILE);
       case "for":
-        return newToken(TOKEN.FOR);
+        return newToken(TokenType.FOR);
       case "let":
-        return newToken(TOKEN.LET);
+        return newToken(TokenType.LET);
       case "var":
-        return newToken(TOKEN.VAR);
+        return newToken(TokenType.VAR);
       case "fn":
-        return newToken(TOKEN.FN);
+        return newToken(TokenType.FN);
       case "if":
-        return newToken(TOKEN.IF);
+        return newToken(TokenType.IF);
       case "else":
-        return newToken(TOKEN.ELSE);
+        return newToken(TokenType.ELSE);
       case "print":
-        return newToken(TOKEN.PRINT);
+        return newToken(TokenType.PRINT);
       case "rem":
-        return newToken(TOKEN.REM);
+        return newToken(TokenType.REM);
       case "mod":
-        return newToken(TOKEN.MOD);
+        return newToken(TokenType.MOD);
       case "div":
-        return newToken(TOKEN.DIV);
+        return newToken(TokenType.DIV);
       case "nil":
-        return newToken(TOKEN.NIL).literal(null);
+        return newToken(TokenType.NIL).literal(null);
       case "and":
-        return newToken(TOKEN.AND);
+        return newToken(TokenType.AND);
       case "or":
-        return newToken(TOKEN.OR);
+        return newToken(TokenType.OR);
       case "nor":
-        return newToken(TOKEN.NOR);
+        return newToken(TokenType.NOR);
       case "xor":
-        return newToken(TOKEN.XOR);
+        return newToken(TokenType.XOR);
       case "xnor":
-        return newToken(TOKEN.XNOR);
+        return newToken(TokenType.XNOR);
       case "not":
-        return newToken(TOKEN.NOT);
+        return newToken(TokenType.NOT);
       case "nand":
-        return newToken(TOKEN.NAND);
+        return newToken(TokenType.NAND);
     }
     // If we make it to this line, then
     // the lexeme thus far is a user
     // symbol (e.g., a variable name,
     // a function name, etc.)
-    return newToken(TOKEN.SYMBOL);
+    return newToken(TokenType.SYMBOL);
   };
 
   /**
@@ -804,7 +963,6 @@ export function lexicalAnalysis(code: string) {
       return errorToken(
         `Infinite string`,
         `scanning a string`,
-        `close the string with a double quote (")`,
       );
     }
     // Otherwise, there is a double-quote, so
@@ -816,7 +974,7 @@ export function lexicalAnalysis(code: string) {
     // so we remove them with `slice(1,-1).`
     const lexeme = slice().slice(1, -1);
 
-    return newToken(TOKEN.STRING, lexeme);
+    return newToken(TokenType.STRING, lexeme);
   };
 
   /**
@@ -831,7 +989,6 @@ export function lexicalAnalysis(code: string) {
       return errorToken(
         `Expected binary digits after “0b”`,
         `scanning a binary number`,
-        `Either do not use a binary number, or follow “0b” with at least a 0 or a 1`,
       );
     }
 
@@ -850,7 +1007,7 @@ export function lexicalAnalysis(code: string) {
     // Convert the modified string into an integer
     const numericValue = Number.parseInt(binaryDigitString, 2);
 
-    return newToken(TOKEN.INT).literal(numericValue);
+    return newToken(TokenType.INT).literal(numericValue);
   };
 
   const newNumberToken = (
@@ -860,37 +1017,35 @@ export function lexicalAnalysis(code: string) {
   ) => {
     const n = hasSeparators ? numberString.replaceAll("_", "") : numberString;
     switch (type) {
-      case TOKEN.INT: {
+      case TokenType.INT: {
         const num = Number.parseInt(n);
         if (num > MAX_INT) {
           return errorToken(
             `encountered an integer overflow.`,
             `scanning an integer literal`,
-            `considering using a big integer.`,
           );
         } else {
           return newToken(type).literal(num);
         }
       }
-      case TOKEN.FLOAT: {
+      case TokenType.FLOAT: {
         const num = Number.parseFloat(n);
         if (num > MAX_FLOAT) {
           return errorToken(
             `encountered a floating point overflow.`,
             `scanning a floating point number`,
-            `consider using a fraction or big fraction`,
           );
         } else {
           return newToken(type).literal(num);
         }
       }
-      case TOKEN.SCIENTIFIC_NUMBER: {
+      case TokenType.SCIENTIFIC_NUMBER: {
         const [a, b] = n.split("E");
         const base = Number.parseFloat(a);
         const exponent = Number.parseInt(b);
         return newToken(type).literal(scinum(base, exponent));
       }
-      case TOKEN.FRACTION: {
+      case TokenType.FRACTION: {
         const [N, D] = n.split("|");
         const numerator = Number.parseInt(N);
         const denominator = Number.parseInt(D);
@@ -898,13 +1053,11 @@ export function lexicalAnalysis(code: string) {
           return errorToken(
             `encounterd an integer overflow in the numerator of “${n}”`,
             `scanning a fraction`,
-            `considering using a big fraction`,
           );
         } else if (denominator > MAX_INT) {
           return errorToken(
             `encounterd an integer overflow in the denominator of “${n}”`,
             `scanning a fraction`,
-            `considering using a big fraction`,
           );
         } else {
           return newToken(type).literal(frac(numerator, denominator));
@@ -914,7 +1067,6 @@ export function lexicalAnalysis(code: string) {
         return errorToken(
           `unknown number type`,
           `scanning a number`,
-          `refrain from using “${n}”`,
         );
     }
   };
@@ -978,8 +1130,6 @@ export function lexicalAnalysis(code: string) {
               `Expected 3 digits after the separator “_” but got ${digits}.`,
               // the phase where this error occurred
               `scanning an underscore-separated number`,
-              // a possible fix
-              `Use exactly three digits after “_”, or refrain from using an underscore-separated number.`,
             );
           }
         }
@@ -992,8 +1142,6 @@ export function lexicalAnalysis(code: string) {
           `Expected 3 digits after the separator “_” but got ${digits}.`,
           // the phase where this error occurred
           `scanning an underscore-separated number`,
-          // a possible fix
-          `Use exactly three digits after “_”, or refrain from using an underscore-separated number.`,
         );
       }
     }
@@ -1005,7 +1153,7 @@ export function lexicalAnalysis(code: string) {
       // Eat the dot.
       tick();
       // Toggle the number type to a FLOAT.
-      type = TOKEN.FLOAT;
+      type = TokenType.FLOAT;
       // Continue consuming digits.
       while (isDigit(peek()) && !atEnd()) {
         tick();
@@ -1015,14 +1163,13 @@ export function lexicalAnalysis(code: string) {
     // The digit could be followed by a vertical bar.
     // If it is, then this is a fraction.
     if (peekIs("|")) {
-      if (type !== TOKEN.INT) {
+      if (type !== TokenType.INT) {
         return errorToken(
           `Expected an integer before “|”`,
           `scanning a fraction`,
-          `Before the “|”, place an integer, or refrain from using a fraction (e.g., use a float instead)`,
         );
       }
-      type = TOKEN.FRACTION;
+      type = TokenType.FRACTION;
       tick();
       while (isDigit(peek()) && !atEnd()) {
         tick();
@@ -1034,7 +1181,7 @@ export function lexicalAnalysis(code: string) {
     // If it is, then this is a scientific number.
     if (peekIs("E")) {
       if (isDigit(peekNext())) {
-        type = TOKEN.SCIENTIFIC_NUMBER;
+        type = TokenType.SCIENTIFIC_NUMBER;
         tick();
         while (isDigit(peek())) {
           tick();
@@ -1042,7 +1189,7 @@ export function lexicalAnalysis(code: string) {
       } else if (
         ((peekNext() === "+") || (peekNext() === "-")) && isDigit(lookup(2))
       ) {
-        type = TOKEN.SCIENTIFIC_NUMBER;
+        type = TokenType.SCIENTIFIC_NUMBER;
         tick();
         tick();
         while (isDigit(peek())) {
@@ -1062,7 +1209,7 @@ export function lexicalAnalysis(code: string) {
 
     // If we’ve reached the end, immediately return an END token.
     if (atEnd()) {
-      return newToken(TOKEN.END, "END");
+      return newToken(TokenType.END, "END");
     }
 
     // Now we get the current character
@@ -1086,36 +1233,36 @@ export function lexicalAnalysis(code: string) {
       if (char === "0" && match("b")) {
         return scanBinaryNumber();
       } else {
-        return scanNumber(TOKEN.INT);
+        return scanNumber(TokenType.INT);
       }
     }
 
     // We check if this is a delimiter.
     switch (char) {
       case ":":
-        return newToken(TOKEN.COLON);
+        return newToken(TokenType.COLON);
       case "&":
-        return newToken(TOKEN.AMPERSAND);
+        return newToken(TokenType.AMPERSAND);
       case "~":
-        return newToken(TOKEN.TILDE);
+        return newToken(TokenType.TILDE);
       case "|":
-        return newToken(TOKEN.VBAR);
+        return newToken(TokenType.VBAR);
       case "(":
-        return newToken(TOKEN.LEFT_PAREN);
+        return newToken(TokenType.LEFT_PAREN);
       case ")":
-        return newToken(TOKEN.RIGHT_PAREN);
+        return newToken(TokenType.RIGHT_PAREN);
       case "[":
-        return newToken(TOKEN.LEFT_BRACKET);
+        return newToken(TokenType.LEFT_BRACKET);
       case "]":
-        return newToken(TOKEN.RIGHT_BRACKET);
+        return newToken(TokenType.RIGHT_BRACKET);
       case "{":
-        return newToken(TOKEN.LEFT_BRACE);
+        return newToken(TokenType.LEFT_BRACE);
       case "}":
-        return newToken(TOKEN.RIGHT_BRACE);
+        return newToken(TokenType.RIGHT_BRACE);
       case ",":
-        return newToken(TOKEN.COMMA);
+        return newToken(TokenType.COMMA);
       case ".":
-        return newToken(TOKEN.DOT);
+        return newToken(TokenType.DOT);
       case "-": {
         if (peek() === "-" && peekNext() === "-") {
           while (peek() !== "\n" && !atEnd()) {
@@ -1123,21 +1270,21 @@ export function lexicalAnalysis(code: string) {
           }
           return Token.empty;
         } else {
-          return newToken(match("-") ? TOKEN.MINUS_MINUS : TOKEN.MINUS);
+          return newToken(match("-") ? TokenType.MINUS_MINUS : TokenType.MINUS);
         }
       }
       case "+":
-        return newToken(match("+") ? TOKEN.PLUS_PLUS : TOKEN.PLUS);
+        return newToken(match("+") ? TokenType.PLUS_PLUS : TokenType.PLUS);
       case "*":
-        return newToken(TOKEN.STAR);
+        return newToken(TokenType.STAR);
       case ";":
-        return newToken(TOKEN.SEMICOLON);
+        return newToken(TokenType.SEMICOLON);
       case "%":
-        return newToken(TOKEN.PERCENT);
+        return newToken(TokenType.PERCENT);
       case "/":
-        return newToken(TOKEN.SLASH);
+        return newToken(TokenType.SLASH);
       case "^":
-        return newToken(TOKEN.CARET);
+        return newToken(TokenType.CARET);
       case "=": {
         if (peek() === "=" && peekNext() === "=") {
           while (peek() === "=") {
@@ -1153,7 +1300,6 @@ export function lexicalAnalysis(code: string) {
             return errorToken(
               `unterminated block comment`,
               `scanning a “=”`,
-              `close the block comment with three equal symbols ("===")`,
             );
           }
           while (peek() === "=") {
@@ -1161,26 +1307,28 @@ export function lexicalAnalysis(code: string) {
           }
           return Token.empty;
         } else {
-          return newToken(match("=") ? TOKEN.EQUAL_EQUAL : TOKEN.EQUAL);
+          return newToken(match("=") ? TokenType.EQUAL_EQUAL : TokenType.EQUAL);
         }
       }
       // If the next character is `=`, then we
       // match the lexeme `!=`. Otherwise, we only
       // match the lexeme `!`.
       case "!":
-        return newToken(match("=") ? TOKEN.BANG_EQUAL : TOKEN.BANG);
+        return newToken(match("=") ? TokenType.BANG_EQUAL : TokenType.BANG);
 
       // If the next character is `=`, then we match
       // the lexeme `<=`. Otherwise, we only
       // match the lexeme `<`.
       case "<":
-        return newToken(match("=") ? TOKEN.LESS_EQUAL : TOKEN.LESS);
+        return newToken(match("=") ? TokenType.LESS_EQUAL : TokenType.LESS);
 
       // If the next character is `=`, then we match
       // the lexeme `>=`. Otherwise, we only
       // match the lexeme `>`.
       case ">":
-        return newToken(match("=") ? TOKEN.GREATER_EQUAL : TOKEN.GREATER);
+        return newToken(
+          match("=") ? TokenType.GREATER_EQUAL : TokenType.GREATER,
+        );
 
       // special handling for strings
       case `"`:
@@ -1189,7 +1337,6 @@ export function lexicalAnalysis(code: string) {
     return errorToken(
       `unknown token: “${char}”`,
       `scanning for tokens`,
-      `remove the unknown token`,
     );
   };
 
@@ -1219,7 +1366,7 @@ export function lexicalAnalysis(code: string) {
         peek = t;
       }
       if (
-        prev.isRightDelimiter() && now.is(TOKEN.COMMA) &&
+        prev.isRightDelimiter() && now.is(TokenType.COMMA) &&
         peek.isRightDelimiter()
       ) {
         continue;
@@ -1227,9 +1374,9 @@ export function lexicalAnalysis(code: string) {
       out.push(now);
     }
     out.push(peek);
-    if (out.length && !out[out.length - 1].is(TOKEN.END)) {
+    if (out.length && !out[out.length - 1].is(TokenType.END)) {
       out.push(token(
-        TOKEN.END,
+        TokenType.END,
         "END",
         null,
         $line,
@@ -1239,16 +1386,43 @@ export function lexicalAnalysis(code: string) {
     return right(out);
   };
 
+  const isDone = () => (
+    $current >= code.length
+  );
+
   return {
     stream,
     scan,
+    isDone,
   };
 }
 
+/**
+ * A type corresponding to a node’s
+ * kind.
+ */
+enum NodeKind {
+  int,
+  float,
+  nil,
+  assignExpr,
+  binaryExpr,
+  callExpr,
+  groupExpr,
+  logicalBinaryExpr,
+  unaryExpr,
+  variableExpr,
+  blockStmt,
+  exprStmt,
+  fnDefStmt,
+  condStmt,
+}
+
 interface ExprVisitor<T> {
-  int(expr: Int): T;
-  float(expr: Float): T;
-  assign(expr: Assign): T;
+  intExpr(expr: IntExpr): T;
+  floatExpr(expr: FloatExpr): T;
+  nilExpr(expr: NilExpr): T;
+  assignExpr(expr: AssignExpr): T;
   binaryExpr(expr: BinaryExpr): T;
   callExpr(expr: CallExpr): T;
   groupExpr(expr: GroupExpr): T;
@@ -1257,50 +1431,78 @@ interface ExprVisitor<T> {
   variable(expr: Variable): T;
 }
 
-abstract class Expr {
+abstract class ASTNode {
+  abstract kind(): NodeKind;
+}
+
+abstract class Expr extends ASTNode {
   abstract accept<T>(ExprVisitor: ExprVisitor<T>): T;
 }
 
-/** A class corresponding to an integer node. */
-class Int extends Expr {
+
+/**
+ * A class corresponding to a nil literal expression.
+ */
+class NilExpr extends Expr {
+  $value: null = null;
+  constructor() {
+    super();
+  }
+  accept<T>(ExprVisitor: ExprVisitor<T>): T {
+    return ExprVisitor.nilExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.nil;
+  }
+}
+const nil = () => (new NilExpr());
+
+/**
+ * A class corresponding to an integer literal expression.
+ */
+class IntExpr extends Expr {
   $value: number;
   constructor(value: number) {
     super();
     this.$value = floor(value);
   }
   accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.int(this);
+    return ExprVisitor.intExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.int;
   }
 }
 
 /**
- * Returns a new integer node.
+ * A class corresponding to an float literal expression.
  */
-const int = (value: number) => (
-  new Int(value)
-);
-
-/** A class corresponding to a float node. */
-class Float extends Expr {
+class FloatExpr extends Expr {
   $value: number;
   constructor(value: number) {
     super();
     this.$value = value;
   }
   accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.float(this);
+    return ExprVisitor.floatExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.float;
   }
 }
+const float = (value:number) => (
+  new FloatExpr(value)
+)
 
 /**
- * Returns a new float node.
+ * Returns a new literal node.
  */
-const float = (value: number) => (
-  new Float(value)
+const int = (value: number) => (
+  new IntExpr(value)
 );
 
 /** A class corresponding to an Assignment node. */
-class Assign extends Expr {
+class AssignExpr extends Expr {
   $name: Token;
   $value: Expr;
   constructor(name: Token, value: Expr) {
@@ -1309,7 +1511,10 @@ class Assign extends Expr {
     this.$value = value;
   }
   accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.assign(this);
+    return ExprVisitor.assignExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.assignExpr;
   }
 }
 
@@ -1317,7 +1522,7 @@ class Assign extends Expr {
  * Returns a new assignment node.
  */
 const assign = (name: Token, value: Expr) => (
-  new Assign(name, value)
+  new AssignExpr(name, value)
 );
 
 /** A class corresponding to a binary expression. */
@@ -1333,6 +1538,9 @@ class BinaryExpr extends Expr {
   }
   accept<T>(ExprVisitor: ExprVisitor<T>): T {
     return ExprVisitor.binaryExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.binaryExpr;
   }
 }
 
@@ -1352,6 +1560,9 @@ class LogicalBinaryExpr extends Expr {
   accept<T>(ExprVisitor: ExprVisitor<T>): T {
     return ExprVisitor.logicalBinaryExpr(this);
   }
+  kind(): NodeKind {
+    return NodeKind.logicalBinaryExpr;
+  }
 }
 
 /**
@@ -1367,6 +1578,9 @@ class UnaryExpr extends Expr {
   }
   accept<T>(ExprVisitor: ExprVisitor<T>): T {
     return ExprVisitor.unaryExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.unaryExpr;
   }
 }
 
@@ -1407,6 +1621,9 @@ class CallExpr extends Expr {
   accept<T>(ExprVisitor: ExprVisitor<T>): T {
     return ExprVisitor.callExpr(this);
   }
+  kind(): NodeKind {
+    return NodeKind.callExpr;
+  }
 }
 
 /**
@@ -1427,6 +1644,9 @@ class GroupExpr extends Expr {
   }
   accept<T>(ExprVisitor: ExprVisitor<T>): T {
     return ExprVisitor.groupExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.groupExpr;
   }
 }
 
@@ -1449,54 +1669,63 @@ class Variable extends Expr {
   accept<T>(ExprVisitor: ExprVisitor<T>): T {
     return ExprVisitor.variable(this);
   }
+  kind(): NodeKind {
+    return NodeKind.variableExpr;
+  }
 }
 const variable = (name: Token) => (
   new Variable(name)
 );
 
-interface StmtVisitor<T> {
+interface StatementVisitor<T> {
   block(stmt: BlockStmt): T;
   expression(stmt: ExprStmt): T;
   fnDef(stmt: FnDefStmt): T;
   conditional(stmt: ConditionalStmt): T;
 }
 
-abstract class Stmt {
-  abstract accept<T>(visitor: StmtVisitor<T>): T;
+abstract class Statement extends ASTNode {
+  abstract accept<T>(visitor: StatementVisitor<T>): T;
 }
 
 /**
  * A class corresponding to a block statement.
  */
-class BlockStmt extends Stmt {
-  $statements: Stmt[];
-  constructor(statements: Stmt[]) {
+class BlockStmt extends Statement {
+  $statements: Statement[];
+  constructor(statements: Statement[]) {
     super();
     this.$statements = statements;
   }
-  accept<T>(visitor: StmtVisitor<T>): T {
+  accept<T>(visitor: StatementVisitor<T>): T {
     return visitor.block(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.blockStmt;
   }
 }
 
 /**
  * Returns a new block statement node.
  */
-const blockStmt = (statements: Stmt[]) => (
+const blockStmt = (statements: Statement[]) => (
   new BlockStmt(statements)
 );
 
 /**
  * A class corresponding to an expression statement.
  */
-class ExprStmt extends Stmt {
+class ExprStmt extends Statement {
   $expression: Expr;
   constructor(expression: Expr) {
     super();
     this.$expression = expression;
   }
-  accept<T>(visitor: StmtVisitor<T>): T {
+  accept<T>(visitor: StatementVisitor<T>): T {
     return visitor.expression(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.exprStmt;
   }
 }
 
@@ -1511,18 +1740,21 @@ const exprStmt = (expression: Expr) => (
  * A class corresponding to a function
  * definition statement.
  */
-class FnDefStmt extends Stmt {
+class FnDefStmt extends Statement {
   $name: Token;
   $params: Token[];
-  $body: Stmt[];
-  constructor(name: Token, params: Token[], body: Stmt[]) {
+  $body: Statement[];
+  constructor(name: Token, params: Token[], body: Statement[]) {
     super();
     this.$name = name;
     this.$params = params;
     this.$body = body;
   }
-  accept<T>(visitor: StmtVisitor<T>): T {
+  accept<T>(visitor: StatementVisitor<T>): T {
     return visitor.fnDef(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.fnDefStmt;
   }
 }
 
@@ -1530,22 +1762,25 @@ class FnDefStmt extends Stmt {
  * Returns a new function definition statement
  * node.
  */
-const fnDefStmt = (name: Token, params: Token[], body: Stmt[]) => (
+const fnDefStmt = (name: Token, params: Token[], body: Statement[]) => (
   new FnDefStmt(name, params, body)
 );
 
-class ConditionalStmt extends Stmt {
+class ConditionalStmt extends Statement {
   $condition: Expr;
-  $then: Stmt;
-  $else: Stmt;
-  constructor(condition: Expr, thenBranch: Stmt, elseBranch: Stmt) {
+  $then: Statement;
+  $else: Statement;
+  constructor(condition: Expr, thenBranch: Statement, elseBranch: Statement) {
     super();
     this.$condition = condition;
     this.$then = thenBranch;
     this.$else = elseBranch;
   }
-  accept<T>(visitor: StmtVisitor<T>): T {
+  accept<T>(visitor: StatementVisitor<T>): T {
     return visitor.conditional(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.condStmt;
   }
 }
 
@@ -1554,8 +1789,380 @@ class ConditionalStmt extends Stmt {
  */
 const conditionalStmt = (
   condition: Expr,
-  thenBranch: Stmt,
-  elseBranch: Stmt,
+  thenBranch: Statement,
+  elseBranch: Statement,
 ) => (
   new ConditionalStmt(condition, thenBranch, elseBranch)
 );
+
+enum BP {
+  NONE,
+  LOWEST,
+  STRINGOP,
+  ASSIGN,
+  ATOM,
+  OR,
+  NOR,
+  AND,
+  NAND,
+  XOR,
+  XNOR,
+  NOT,
+  EQ,
+  REL,
+  SUM,
+  DIFFERENCE,
+  PRODUCT,
+  QUOTIENT,
+  IMUL,
+  POWER,
+  POSTFIX,
+  CALL,
+}
+
+/**
+ * A type corresponding to a parsing rule.
+ */
+type ParseRule<T> = (token: Token, lastNode: T) => Either<Err, T>;
+
+/**
+ * A type correspondign to a table
+ * of parse rules.
+ * The table takes the form:
+ * ~~~
+ * {
+ *   T: [P1, P2, BP]
+ * }
+ * ~~~
+ * where T is a TokenType,
+ * P1 is a ParseRule corresponding to a prefix rule,
+ * P2 is a ParseRule corresponding to an infix rule, and
+ * P3 is a ParseRule corresponding to a postfix rule.
+ */
+type ParseRuleTable<T> = Record<
+  TokenType,
+  [ParseRule<T>, ParseRule<T>, BP]
+>;
+
+class ParserState {
+  /** The token currently being parsed. */
+  $current: Token = Token.empty;
+
+  /** The token immediately after the current token. */
+  $peek: Token = Token.empty;
+
+  /** The lexical analyzer. */
+  $lexer: ReturnType<typeof lexicalAnalysis>;
+
+  /**
+   * This field stores the parser state’s error,
+   * defaulting to null. If this field is not null,
+   * then an error occurred.
+   */
+  $error: null | Err = null;
+
+  /**
+   * Moves the lexer forward and
+   * returns the current token.
+   */
+  next() {
+    this.$current = this.$peek;
+    const nextToken = this.$lexer.scan();
+    if (nextToken.isErrorToken()) {
+      this.$error = nextToken.$literal;
+      return Token.END();
+    }
+    this.$peek = nextToken;
+    return this.$current;
+  }
+
+  /**
+   * Returns a Left<Err> and sets
+   * the `$error` field of the parser
+   * state.
+   */
+  error(message: string, phase: string) {
+    const err = syntaxError(
+      message,
+      phase,
+      this.$current.$line,
+      this.$current.$column,
+    );
+    this.$error = err;
+    return left(err);
+  }
+
+  /**
+   * Returns true if the next token
+   * is of the given type, false otherwise.
+   * If it is of the given type, the scaner
+   * is moved forward.
+   */
+  nextIs(type: TokenType) {
+    if (this.$peek.is(type)) {
+      this.next();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Returns true if the current token
+   * is of the given type.
+   */
+  check(type: TokenType) {
+    if (this.atEnd()) {
+      return false;
+    } else {
+      return this.$peek.is(type);
+    }
+  }
+
+  /**
+   * Returns true if the parser must
+   * halt. There are two conditions
+   * warranting a parsing halt:
+   *
+   * 1. The lexer has reached the end of file, or
+   * 2. the parser state has encountered an error.
+   */
+  atEnd() {
+    return (
+      this.$lexer.isDone() ||
+      this.$error !== null
+    );
+  }
+  constructor(code: string) {
+    this.$lexer = lexicalAnalysis(code);
+    this.next();
+  }
+  /**
+   * Returns a new Right<Statement>
+   */
+  statement(stmt: Statement) {
+    return right(stmt);
+  }
+  /**
+   * Returns a new Right<Expr>
+   */
+  expr(expr: Expr) {
+    return right(expr);
+  }
+}
+const enstate = (code: string) => (
+  new ParserState(code)
+);
+
+function syntaxAnalysis(code: string) {
+  const state = enstate(code);
+
+  /**
+   * A parse rule that parses an integer.
+   */
+  const number: ParseRule<Expr> = (t) => {
+    if (t.isNumericToken()) {
+      if (t.is(TokenType.FLOAT)) {
+        return state.expr(float(t.$literal));
+      } else {
+        return state.expr(int(t.$literal));
+      }
+    } else {
+      return state.error(
+        `Expected an integer, but got ${t.$lexeme}`,
+        `parsing an integer`,
+      );
+    }
+  };
+
+  const infix: ParseRule<Expr> = (op, lhs) => {
+    const p = precOf(op.$type);
+    const rhs = expr(p);
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const out = binex(
+      lhs,
+      op,
+      rhs.unwrap(),
+    );
+    return state.expr(out);
+  };
+
+  /**
+   * Alias for BP.NONE, corresponding
+   * to a binding power of nothing.
+   * This is used purely as a placeholder
+   * for the ParseRuleTable.
+   */
+  const ___o = BP.NONE;
+
+  /**
+   * A parse rule that always returns an
+   * error. This is used purely as a
+   * placeholder for empty slots in the
+   * parse rules table.
+   */
+  const ___: ParseRule<Expr> = (t) => {
+    if (state.$error !== null) {
+      return left(state.$error);
+    } else {
+      return state.error(
+        `Unexpected lexeme: ${t.$lexeme}`,
+        `expression`,
+      );
+    }
+  };
+  const rules: ParseRuleTable<Expr> = {
+    [TokenType.LEFT_PAREN]: [___, ___, ___o],
+    [TokenType.RIGHT_PAREN]: [___, ___, ___o],
+    [TokenType.LEFT_BRACE]: [___, ___, ___o],
+    [TokenType.RIGHT_BRACE]: [___, ___, ___o],
+    [TokenType.LEFT_BRACKET]: [___, ___, ___o],
+    [TokenType.RIGHT_BRACKET]: [___, ___, ___o],
+    [TokenType.COMMA]: [___, ___, ___o],
+    [TokenType.DOT]: [___, ___, ___o],
+    [TokenType.COLON]: [___, ___, ___o],
+    [TokenType.SEMICOLON]: [___, ___, ___o],
+    [TokenType.VBAR]: [___, ___, ___o],
+    [TokenType.AMPERSAND]: [___, ___, ___o],
+    [TokenType.TILDE]: [___, ___, ___o],
+    [TokenType.SLASH]: [___, ___, ___o],
+    [TokenType.CARET]: [___, ___, ___o],
+    [TokenType.MINUS]: [___, ___, ___o],
+    [TokenType.MINUS_MINUS]: [___, ___, ___o],
+    [TokenType.PLUS]: [___, infix, BP.SUM],
+    [TokenType.PLUS_PLUS]: [___, ___, ___o],
+    [TokenType.STAR]: [___, ___, ___o],
+    [TokenType.PERCENT]: [___, ___, ___o],
+    [TokenType.BANG]: [___, ___, ___o],
+    [TokenType.EQUAL]: [___, ___, ___o],
+    [TokenType.EQUAL_EQUAL]: [___, ___, ___o],
+    [TokenType.BANG_EQUAL]: [___, ___, ___o],
+    [TokenType.LESS]: [___, ___, ___o],
+    [TokenType.GREATER]: [___, ___, ___o],
+    [TokenType.LESS_EQUAL]: [___, ___, ___o],
+    [TokenType.GREATER_EQUAL]: [___, ___, ___o],
+    [TokenType.AND]: [___, ___, ___o],
+    [TokenType.OR]: [___, ___, ___o],
+    [TokenType.NOT]: [___, ___, ___o],
+    [TokenType.REM]: [___, ___, ___o],
+    [TokenType.MOD]: [___, ___, ___o],
+    [TokenType.DIV]: [___, ___, ___o],
+    [TokenType.NOR]: [___, ___, ___o],
+    [TokenType.XOR]: [___, ___, ___o],
+    [TokenType.XNOR]: [___, ___, ___o],
+    [TokenType.NAND]: [___, ___, ___o],
+    [TokenType.SYMBOL]: [___, ___, ___o],
+    [TokenType.INT]: [number, ___, BP.ATOM],
+    [TokenType.FLOAT]: [number, ___, BP.ATOM],
+    [TokenType.SCIENTIFIC_NUMBER]: [___, ___, ___o],
+    [TokenType.FRACTION]: [___, ___, ___o],
+    [TokenType.STRING]: [___, ___, ___o],
+    [TokenType.CLASS]: [___, ___, ___o],
+    [TokenType.IF]: [___, ___, ___o],
+    [TokenType.ELSE]: [___, ___, ___o],
+    [TokenType.TRUE]: [___, ___, ___o],
+    [TokenType.FALSE]: [___, ___, ___o],
+    [TokenType.FOR]: [___, ___, ___o],
+    [TokenType.FN]: [___, ___, ___o],
+    [TokenType.NIL]: [___, ___, ___o],
+    [TokenType.PRINT]: [___, ___, ___o],
+    [TokenType.RETURN]: [___, ___, ___o],
+    [TokenType.SUPER]: [___, ___, ___o],
+    [TokenType.THIS]: [___, ___, ___o],
+    [TokenType.LET]: [___, ___, ___o],
+    [TokenType.WHILE]: [___, ___, ___o],
+    [TokenType.NAN]: [___, ___, ___o],
+    [TokenType.INF]: [___, ___, ___o],
+    [TokenType.NUMERIC_CONSTANT]: [___, ___, ___o],
+    [TokenType.VAR]: [___, ___, ___o],
+    [TokenType.ERROR]: [___, ___, ___o],
+    [TokenType.EMPTY]: [___, ___, ___o],
+    [TokenType.END]: [___, ___, ___o],
+  };
+
+  /**
+   * Returns the prefix rule associated
+   * with the given token type.
+   */
+  const prefixRule = (type: TokenType): ParseRule<Expr> => (
+    rules[type][0]
+  );
+
+  /**
+   * Returns the infix rule associated
+   * with the given token type.
+   */
+  const infixRule = (type: TokenType): ParseRule<Expr> => (
+    rules[type][1]
+  );
+
+  /**
+   * Returns the precedence of the given
+   * token type.
+   */
+  const precOf = (type: TokenType): BP => (
+    rules[type][2]
+  );
+
+  const expr = (minBP: BP = BP.LOWEST) => {
+    let token = state.next();
+    const prefix = prefixRule(token.$type);
+    let lhs = prefix(token, nil());
+    if (lhs.isLeft()) {
+      return lhs;
+    }
+    while (minBP < precOf(state.$peek.$type)) {
+      if (state.atEnd()) {
+        break;
+      }
+      token = state.next();
+      const infix = infixRule(token.$type);
+      const rhs = infix(token, lhs.unwrap());
+      if (rhs.isLeft()) {
+        return rhs;
+      }
+      lhs = rhs;
+    }
+    return lhs;
+  };
+  const expression = () => {
+    const out = expr();
+    if (out.isLeft()) {
+      return out;
+    }
+    const expression = out.unwrap();
+    if (state.nextIs(TokenType.SEMICOLON)) {
+      return state.statement(exprStmt(expression));
+    }
+    return state.error(
+      `Expected a “;” to end the statement`,
+      `expression statement`,
+    );
+  };
+  const statement = () => {
+    return expression();
+  };
+  return {
+    statements() {
+      if (state.$error !== null) {
+        return left(state.$error);
+      }
+      const statements: Statement[] = [];
+      while (!state.atEnd()) {
+        const result = statement();
+        if (result.isLeft()) {
+          return result;
+        }
+        statements.push(result.unwrap());
+      }
+      return right(statements);
+    },
+  };
+}
+
+const test = syntaxAnalysis(
+  `1 + 2;`,
+);
+const out = test.statements();
+print(treed(out));

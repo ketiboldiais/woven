@@ -2067,6 +2067,14 @@ const blockStmt = (statements: Statement[]) => (
 );
 
 /**
+ * Returns true, and asserts,
+ * that the given node is a block statement node.
+ */
+const isBlock = (node: ASTNode): node is BlockStmt => (
+  node.kind() === NodeKind.blockStmt
+);
+
+/**
  * A node corresponding to a while-loop statement.
  */
 class WhileStmt extends Statement {
@@ -2750,6 +2758,87 @@ function syntaxAnalysis(code: string) {
   };
 
   /**
+   * Parses a for-loop statement.
+   */
+  const forLoopStatement = () => {
+    const phase = `parsing a for-loop`;
+    const preclauseToken = state.next();
+    if (!preclauseToken.is(TokenType.LEFT_PAREN)) {
+      return state.error(
+        `Expected a “(” after “for” to begin the loop's clauses`,
+        phase,
+      );
+    }
+    let init: Statement | null = null;
+    if (state.nextIs(TokenType.SEMICOLON)) {
+      init = init;
+    } else if (state.nextIs(TokenType.VAR)) {
+      const initializer = varDefStatement(TokenType.VAR);
+      if (initializer.isLeft()) {
+        return initializer;
+      }
+      init = initializer.unwrap();
+    } else {
+      const exp = expressionStatement();
+      if (exp.isLeft()) {
+        return exp;
+      }
+      init = exp.unwrap();
+    }
+    let condition: Expr | null = null;
+    if (!state.check(TokenType.SEMICOLON)) {
+      const c = expr();
+      if (c.isLeft()) {
+        return c;
+      }
+      condition = c.unwrap();
+    }
+    const postConditionToken = state.next();
+    if (!postConditionToken.is(TokenType.SEMICOLON)) {
+      return state.error(
+        `Expected a “;” after the for-loop condition`,
+        phase,
+      );
+    }
+    let increment: Expr | null = null;
+    if (!state.check(TokenType.LEFT_PAREN)) {
+      const inc = expr();
+      if (inc.isLeft()) {
+        return inc;
+      }
+      increment = inc.unwrap();
+    }
+    const postIncrementToken = state.next();
+    if (!postIncrementToken.is(TokenType.RIGHT_PAREN)) {
+      return state.error(
+        `Expected a “)” to close the for-loop’s clauses`,
+        phase,
+      );
+    }
+    const b = statement();
+    if (b.isLeft()) {
+      return b;
+    }
+    let body = b.unwrap();
+    if (increment !== null) {
+      if (isBlock(body)) {
+        body.$statements.push(exprStmt(increment));
+      } else {
+        body = blockStmt([body, exprStmt(increment)]);
+      }
+    }
+    let loopCondition: Expr = bool(true);
+    if (condition !== null) {
+      loopCondition = condition;
+    }
+    body = whileStmt(loopCondition, body);
+    if (init !== null) {
+      body = blockStmt([init, body]);
+    }
+    return state.statement(body);
+  };
+
+  /**
    * Parses a while-loop statement.
    */
   const whileStatement = () => {
@@ -2866,6 +2955,8 @@ function syntaxAnalysis(code: string) {
       return conditionalStatement();
     } else if (state.nextIs(TokenType.WHILE)) {
       return whileStatement();
+    } else if (state.nextIs(TokenType.FOR)) {
+      return forLoopStatement();
     } else if (state.nextIs(TokenType.LEFT_BRACE)) {
       return blockStatement();
     } else if (state.nextIs(TokenType.LET)) {
@@ -2902,8 +2993,8 @@ function syntaxAnalysis(code: string) {
 }
 
 const test = syntaxAnalysis(`
-while x < 5 {
-  y = 2;
+for (var i = 0; i < 5; i=i+1) {
+  let j = 2;
 }
 `);
 const out = test.statements();

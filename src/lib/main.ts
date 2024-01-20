@@ -689,6 +689,11 @@ class Err extends Error {
    */
   $column: number;
 
+  /**
+   * This error’s message.
+   */
+  $message: string;
+
   constructor(
     message: string,
     type: ErrorType,
@@ -697,6 +702,7 @@ class Err extends Error {
     column: number,
   ) {
     super(message);
+    this.$message = message;
     this.$type = type;
     this.$phase = phase;
     this.$line = line;
@@ -1817,9 +1823,11 @@ const indexingExpr = (list: Expr, index: Expr) => (
  */
 class VectorExpr extends Expr {
   $elements: Expr[];
-  constructor(elements: Expr[]) {
+  $leftBracket: Token;
+  constructor(elements: Expr[], leftBracket: Token) {
     super();
     this.$elements = elements;
+    this.$leftBracket = leftBracket;
   }
   accept<T>(Visitor: Visitor<T>): T {
     return Visitor.vectorExpr(this);
@@ -1832,8 +1840,8 @@ class VectorExpr extends Expr {
 /**
  * Returns a new vector expression node.
  */
-const vectorExpr = (elements: Expr[]) => (
-  new VectorExpr(elements)
+const vectorExpr = (elements: Expr[], leftBracket: Token) => (
+  new VectorExpr(elements, leftBracket)
 );
 
 /**
@@ -1851,11 +1859,18 @@ class MatrixExpr extends Expr {
   $vectors: VectorExpr[];
   $rows: number;
   $columns: number;
-  constructor(vectors: VectorExpr[], rows: number, columns: number) {
+  $leftBracket: Token;
+  constructor(
+    vectors: VectorExpr[],
+    rows: number,
+    columns: number,
+    leftBracket: Token,
+  ) {
     super();
     this.$vectors = vectors;
     this.$rows = rows;
     this.$columns = columns;
+    this.$leftBracket = leftBracket;
   }
   accept<T>(Visitor: Visitor<T>): T {
     return Visitor.matrixExpr(this);
@@ -1868,8 +1883,13 @@ class MatrixExpr extends Expr {
 /**
  * Returns a new matrix expression node.
  */
-const matrixExpr = (vectors: VectorExpr[], rows: number, columns: number) => (
-  new MatrixExpr(vectors, rows, columns)
+const matrixExpr = (
+  vectors: VectorExpr[],
+  rows: number,
+  columns: number,
+  leftBracket: Token,
+) => (
+  new MatrixExpr(vectors, rows, columns, leftBracket)
 );
 
 /** A class corresponding to a binary expression. */
@@ -2698,6 +2718,44 @@ function syntaxAnalysis(code: string) {
   };
 
   /**
+   * Parses a decrement expression.
+   */
+  const decrement: ParseRule<Expr> = (op, node) => {
+    if (isVariable(node)) {
+      const right = binex(
+        node,
+        op.type(TokenType.MINUS).lexeme("-"),
+        int(1),
+      );
+      return state.expr(assign(node, right));
+    } else {
+      return state.error(
+        `Expected the left-hand side of “--” to be either a variable or a property accessor`,
+        `parsing a decrement`,
+      );
+    }
+  };
+
+  /**
+   * Parses an increment expression.
+   */
+  const increment: ParseRule<Expr> = (op, node) => {
+    if (isVariable(node)) {
+      const right = binex(
+        node,
+        op.type(TokenType.PLUS).lexeme("+"),
+        int(1),
+      );
+      return state.expr(assign(node, right));
+    } else {
+      return state.error(
+        `Expected the left-hand side of “++” to be either a variable or a property accessor`,
+        `parsing an increment`,
+      );
+    }
+  };
+
+  /**
    * Parses a list of comma-separated expressions.
    */
   const commaSeparatedExprs = () => {
@@ -2736,10 +2794,24 @@ function syntaxAnalysis(code: string) {
     return state.expr(out);
   };
 
+  const indexingExpression: ParseRule<Expr> = (op, lhs) => {
+    const index = expr();
+    if (index.isLeft()) {
+      return index;
+    }
+    if (!state.nextIs(TokenType.RIGHT_BRACKET)) {
+      return state.error(
+        `Expected a “]” to close the indexing accessor`,
+        `parsing an indexing expression`,
+      );
+    }
+    return state.expr(indexingExpr(lhs, index.unwrap()));
+  };
+
   /**
    * Parses a vector or matrix expression.
    */
-  const vectorExpression: ParseRule<Expr> = () => {
+  const vectorExpression: ParseRule<Expr> = (leftBracket) => {
     const elements: Expr[] = [];
     const vectors: VectorExpr[] = [];
     const phase = `parsing a vector expression`;
@@ -2774,9 +2846,9 @@ function syntaxAnalysis(code: string) {
           phase,
         );
       }
-      return state.expr(matrixExpr(vectors, rows, columns));
+      return state.expr(matrixExpr(vectors, rows, columns, leftBracket));
     }
-    return state.expr(vectorExpr(elements));
+    return state.expr(vectorExpr(elements, leftBracket));
   };
 
   /**
@@ -2832,6 +2904,13 @@ function syntaxAnalysis(code: string) {
     [TokenType.CARET]: [___, infix, BP.POWER],
     [TokenType.BANG]: [___, factorialExpression, BP.POSTFIX],
 
+    // Special Assign Operators
+    [TokenType.PLUS_PLUS]: [___, increment, BP.POSTFIX],
+    [TokenType.MINUS_MINUS]: [___, decrement, BP.POSTFIX],
+
+    // String Infix
+    [TokenType.AMPERSAND]: [___, infix, BP.STRINGOP],
+
     // Logical Operators
     [TokenType.AND]: [___, logicalInfix, BP.AND],
     [TokenType.OR]: [___, logicalInfix, BP.OR],
@@ -2853,20 +2932,19 @@ function syntaxAnalysis(code: string) {
     [TokenType.LEFT_PAREN]: [primary, fnCall, BP.CALL],
     [TokenType.RIGHT_PAREN]: [___, ___, ___o],
 
+    // Vectors and indexing
+    [TokenType.LEFT_BRACKET]: [vectorExpression, indexingExpression, BP.CALL],
+
     // Not handled by the Pratt parsing function (`expr`).
     [TokenType.LEFT_BRACE]: [___, ___, ___o], // Handled by `blockStatement`
     [TokenType.RIGHT_BRACE]: [___, ___, ___o], // Handled by statement parsers
-    [TokenType.LEFT_BRACKET]: [vectorExpression, ___, BP.CALL],
     [TokenType.RIGHT_BRACKET]: [___, ___, ___o],
-    [TokenType.COMMA]: [___, ___, ___o],
+    [TokenType.COMMA]: [___, ___, ___o], // Handled by various parsers
     [TokenType.DOT]: [___, ___, ___o],
     [TokenType.COLON]: [___, ___, ___o],
     [TokenType.SEMICOLON]: [___, ___, ___o], // Handled by statement parsers
     [TokenType.VBAR]: [___, ___, ___o], // Scanned as part of a fraction
-    [TokenType.AMPERSAND]: [___, ___, ___o],
     [TokenType.TILDE]: [___, ___, ___o],
-    [TokenType.MINUS_MINUS]: [___, ___, ___o],
-    [TokenType.PLUS_PLUS]: [___, ___, ___o],
     [TokenType.CLASS]: [___, ___, ___o],
     [TokenType.IF]: [___, ___, ___o], // Handled by `ifStatement`
     [TokenType.ELSE]: [___, ___, ___o], // Handled by `ifStatement`
@@ -3047,7 +3125,7 @@ function syntaxAnalysis(code: string) {
     const preclauseToken = state.next();
     if (!preclauseToken.is(TokenType.LEFT_PAREN)) {
       return state.error(
-        `Expected a “(” after “for” to begin the loop's clauses`,
+        `Expected a “(” after “for” to begin the loop's clauses.`,
         phase,
       );
     }
@@ -3060,6 +3138,11 @@ function syntaxAnalysis(code: string) {
         return initializer;
       }
       init = initializer.unwrap();
+    } else if (state.nextIs(TokenType.LET)) {
+      return state.error(
+        `The variable initializer must be declared with “var”, since the initializer will mutate.`,
+        phase,
+      );
     } else {
       const exp = expressionStatement();
       if (exp.isLeft()) {
@@ -3278,8 +3361,89 @@ function syntaxAnalysis(code: string) {
   };
 }
 
-const test = syntaxAnalysis(`
-fn f(x) = x^2;
-`);
-const out = test.statements();
-print(treed(out));
+/**
+ * An object that executes a given syntax tree.
+ */
+class Interpreter implements Visitor<Primitive> {
+  intExpr(expr: IntExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  floatExpr(expr: FloatExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  fracExpr(expr: FracExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  scinumExpr(expr: ScinumExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  numConstExpr(expr: NumericConstExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  nilExpr(expr: NilExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  stringExpr(expr: StringExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  booleanExpr(expr: BooleanExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  indexingExpr(expr: IndexingExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  vectorExpr(expr: VectorExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  matrixExpr(expr: MatrixExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  assignExpr(expr: AssignExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  binaryExpr(expr: BinaryExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  logicalBinaryExpr(expr: LogicalBinaryExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  relationExpr(expr: RelationExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  callExpr(expr: CallExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  groupExpr(expr: GroupExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  unaryExpr(expr: UnaryExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  variableExpr(expr: VariableExpr): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  printStmt(stmt: PrintStmt): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  varDefStmt(stmt: VarDefStmt): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  whileStmt(stmt: WhileStmt): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  blockStmt(stmt: BlockStmt): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  returnStmt(stmt: ReturnStmt): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  expressionStmt(stmt: ExprStmt): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  fnDefStmt(stmt: FnDefStmt): Primitive {
+    throw new Error("Method not implemented.");
+  }
+  conditionalStmt(stmt: ConditionalStmt): Primitive {
+    throw new Error("Method not implemented.");
+  }
+}

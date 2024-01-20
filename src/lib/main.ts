@@ -3,6 +3,36 @@ const { floor } = Math;
 const MAX_INT = Number.MAX_SAFE_INTEGER;
 const MAX_FLOAT = Number.MAX_VALUE;
 
+/**
+ * Returns a% of b.
+ */
+const percent = (a: number, b: number) => ((a / 100) * b);
+
+const isInteger = (n: any): n is number => (
+  typeof n === "number" && (Number.isInteger(n))
+);
+
+/** Returns the factorial of the given number. */
+const factorialize = (num: number) => {
+  if (num === 0 || num === 1) {
+    return 1;
+  }
+  for (var i = num - 1; i >= 1; i--) {
+    num *= i;
+  }
+  return num;
+};
+
+/**
+ * Returns `a rem b` (the signed remainder).
+ */
+const rem = (a: number, b: number) => (a % b);
+
+/**
+ * Returns `a mod b` (the unsigned remainder).
+ */
+const mod = (a: number, b: number) => ((a % b) + b) % b;
+
 // § Tree Printer
 /**
  * In later sections, it will be useful to print
@@ -11,7 +41,7 @@ const MAX_FLOAT = Number.MAX_VALUE;
  */
 
 /**
- * Returns a pretty-pritn string of the
+ * Returns a pretty-print string of the
  * given object.
  */
 export const treed = (obj: Object) => {
@@ -207,8 +237,6 @@ class Fraction {
   }
 }
 
-// § Runtime Value: Fraction
-
 /**
  * Returns a new fraction.
  * @param n - The fraction’s numerator.
@@ -218,7 +246,13 @@ const frac = (n: number, d: number) => (
   new Fraction(n, d)
 );
 
-// § Runtime Value: Scientific Number
+/**
+ * Returns true, and asserts, if
+ * the given value is a fraction.
+ */
+const isFrac = (value: any): value is Fraction => (
+  value instanceof Fraction
+);
 
 /**
  * A class corresponding to a scientific number.
@@ -231,8 +265,20 @@ class Scinum {
     this.$e = e;
   }
 }
+
+/**
+ * Returns a new scientific number.
+ */
 const scinum = (base: number, exponent: number) => (
   new Scinum(base, exponent)
+);
+
+/**
+ * Returns true, and asserts, if the
+ * given value is a scientific number.
+ */
+const isScinum = (value: any): value is Scinum => (
+  value instanceof Scinum
 );
 
 enum TokenType {
@@ -370,10 +416,10 @@ const PI = Math.PI;
 const E = Math.E;
 
 /** Tokens have a literal value, but they must be a Primitive type. */
-type Primitive = number | string | boolean | null | Fraction | Scinum | Err;
+type Primitive = number | string | boolean | null | Fraction | Scinum;
 
 /** A class corresponding to a token. */
-class Token<L extends Primitive = any> {
+class Token<L extends (Primitive | Err) = any> {
   /** The token’s type. */
   $type: TokenType;
 
@@ -614,7 +660,7 @@ class Token<L extends Primitive = any> {
  * - The column within the line where this token was
  * read (specifically, the column where the lexeme starts).
  */
-const token = <T extends Primitive>(
+const token = <T extends (Primitive | Err)>(
   type: TokenType,
   lexeme: string,
   literal: T,
@@ -1574,13 +1620,13 @@ enum NodeKind {
  */
 abstract class ASTNode {
   abstract kind(): NodeKind;
+  abstract accept<T>(Visitor: Visitor<T>): T;
 }
 
 /**
  * A class corresponding to an expression node.
  */
 abstract class Expr extends ASTNode {
-  abstract accept<T>(Visitor: Visitor<T>): T;
 }
 
 /**
@@ -2100,7 +2146,6 @@ const isVariable = (node: ASTNode): node is VariableExpr => (
 );
 
 abstract class Statement extends ASTNode {
-  abstract accept<T>(visitor: Visitor<T>): T;
 }
 
 /**
@@ -2892,7 +2937,7 @@ function syntaxAnalysis(code: string) {
     // Assignment Operator
     [TokenType.EQUAL]: [___, assignment, BP.ASSIGN],
 
-    // Algebraic Operators
+    // Algebraic Infix Operators
     [TokenType.PLUS]: [___, infix, BP.SUM],
     [TokenType.MINUS]: [___, infix, BP.DIFFERENCE],
     [TokenType.STAR]: [___, infix, BP.PRODUCT],
@@ -2902,22 +2947,24 @@ function syntaxAnalysis(code: string) {
     [TokenType.MOD]: [___, infix, BP.QUOTIENT],
     [TokenType.DIV]: [___, infix, BP.QUOTIENT],
     [TokenType.CARET]: [___, infix, BP.POWER],
+    // Algebraic Postfix Operator
     [TokenType.BANG]: [___, factorialExpression, BP.POSTFIX],
+
+    // String Infix Operator
+    [TokenType.AMPERSAND]: [___, infix, BP.STRINGOP],
 
     // Special Assign Operators
     [TokenType.PLUS_PLUS]: [___, increment, BP.POSTFIX],
     [TokenType.MINUS_MINUS]: [___, decrement, BP.POSTFIX],
 
-    // String Infix
-    [TokenType.AMPERSAND]: [___, infix, BP.STRINGOP],
-
-    // Logical Operators
+    // Logical Infix Operators
     [TokenType.AND]: [___, logicalInfix, BP.AND],
     [TokenType.OR]: [___, logicalInfix, BP.OR],
     [TokenType.NOR]: [___, logicalInfix, BP.NOR],
     [TokenType.XOR]: [___, logicalInfix, BP.XOR],
     [TokenType.XNOR]: [___, logicalInfix, BP.XNOR],
     [TokenType.NAND]: [___, logicalInfix, BP.NAND],
+    // Logical Prefix Operator
     [TokenType.NOT]: [unary, ___, BP.NOT],
 
     // Comparison Operators
@@ -3361,33 +3408,66 @@ function syntaxAnalysis(code: string) {
   };
 }
 
+const truthValue = (value: Primitive) => {
+  if (typeof value === "boolean") {
+    return value;
+  } else if (typeof value === "number") {
+    return (
+      value !== 0 &&
+      !Number.isNaN(value)
+    );
+  } else if (typeof value === "string") {
+    return value.length !== 0;
+  } else if (value === null) {
+    return false;
+  }
+  return true;
+};
+
 /**
  * An object that executes a given syntax tree.
  */
 class Interpreter implements Visitor<Primitive> {
+  constructor() {
+  }
+  interpret(statements: Statement[]): Either<Err, Primitive> {
+    try {
+      let result: Primitive = null;
+      const L = statements.length;
+      for (let i = 0; i < L; i++) {
+        result = this.evaluate(statements[i]);
+      }
+      return right(result);
+    } catch (error) {
+      return left(error as Err);
+    }
+  }
+  evaluate(node: ASTNode) {
+    return node.accept(this);
+  }
   intExpr(expr: IntExpr): Primitive {
-    throw new Error("Method not implemented.");
+    return expr.$value;
   }
   floatExpr(expr: FloatExpr): Primitive {
-    throw new Error("Method not implemented.");
+    return expr.$value;
   }
   fracExpr(expr: FracExpr): Primitive {
-    throw new Error("Method not implemented.");
+    return expr.$value;
   }
   scinumExpr(expr: ScinumExpr): Primitive {
-    throw new Error("Method not implemented.");
+    return expr.$value;
   }
   numConstExpr(expr: NumericConstExpr): Primitive {
-    throw new Error("Method not implemented.");
+    return expr.$value;
   }
   nilExpr(expr: NilExpr): Primitive {
-    throw new Error("Method not implemented.");
+    return expr.$value;
   }
   stringExpr(expr: StringExpr): Primitive {
-    throw new Error("Method not implemented.");
+    return expr.$value;
   }
   booleanExpr(expr: BooleanExpr): Primitive {
-    throw new Error("Method not implemented.");
+    return expr.$value;
   }
   indexingExpr(expr: IndexingExpr): Primitive {
     throw new Error("Method not implemented.");
@@ -3402,28 +3482,109 @@ class Interpreter implements Visitor<Primitive> {
     throw new Error("Method not implemented.");
   }
   binaryExpr(expr: BinaryExpr): Primitive {
+    let left = this.evaluate(expr.$left);
+    let right = this.evaluate(expr.$right);
+    if (typeof left === "number" && typeof right === "number") {
+      switch (expr.$op.$type) {
+        case TokenType.PLUS:
+          return left + right;
+        case TokenType.MINUS:
+          return left - right;
+        case TokenType.STAR:
+          return left * right;
+        case TokenType.PERCENT:
+          return percent(left, right);
+        case TokenType.SLASH:
+          return left / right;
+        case TokenType.REM:
+          return rem(left, right);
+        case TokenType.MOD:
+          return mod(left, right);
+        case TokenType.CARET:
+          return left ** right;
+        case TokenType.DIV:
+          return floor(left / right);
+      }
+    }
     throw new Error("Method not implemented.");
   }
   logicalBinaryExpr(expr: LogicalBinaryExpr): Primitive {
-    throw new Error("Method not implemented.");
+    let left = truthValue(this.evaluate(expr.$left));
+    let right = truthValue(this.evaluate(expr.$right));
+    switch (expr.$op.$type) {
+      case TokenType.AND:
+        return left && right;
+      case TokenType.OR:
+        return left || right;
+      case TokenType.NAND:
+        return !(left && right);
+      case TokenType.NOR:
+        return !(left || right);
+      case TokenType.XNOR:
+        return (left === right);
+      case TokenType.XOR:
+        return (left !== right);
+    }
+    throw runtimeError(
+      `Unexpected operator: “${expr.$op.$lexeme}”`,
+      `interpreting a logical binary experssion`,
+      expr.$op.$line,
+      expr.$op.$column,
+    );
   }
   relationExpr(expr: RelationExpr): Primitive {
+    let left = this.evaluate(expr.$left);
+    let right = this.evaluate(expr.$right);
+    if (typeof left === "number" && typeof right === "number") {
+      switch (expr.$op.$type) {
+        case TokenType.EQUAL_EQUAL:
+          return left === right;
+        case TokenType.BANG_EQUAL:
+          return left !== right;
+        case TokenType.LESS:
+          return left < right;
+        case TokenType.GREATER:
+          return left > right;
+        case TokenType.LESS_EQUAL:
+          return left <= right;
+        case TokenType.GREATER_EQUAL:
+          return left >= right;
+      }
+    }
     throw new Error("Method not implemented.");
   }
   callExpr(expr: CallExpr): Primitive {
     throw new Error("Method not implemented.");
   }
   groupExpr(expr: GroupExpr): Primitive {
-    throw new Error("Method not implemented.");
+    return this.evaluate(expr.$inner);
   }
   unaryExpr(expr: UnaryExpr): Primitive {
+    const arg = this.evaluate(expr.$arg);
+    if (expr.$op.is(TokenType.NOT)) {
+      return !truthValue(arg);
+    }
+    if (expr.$op.is(TokenType.BANG)) {
+      if (isInteger(arg)) {
+        return factorialize(arg);
+      } else {
+        throw runtimeError(
+          `Invalid operand passed to “!”. The factorial is only defined on integers`,
+          `interpreting a factorial expression`,
+          expr.$op.$line,
+          expr.$op.$column,
+        );
+      }
+    }
     throw new Error("Method not implemented.");
   }
   variableExpr(expr: VariableExpr): Primitive {
     throw new Error("Method not implemented.");
   }
   printStmt(stmt: PrintStmt): Primitive {
-    throw new Error("Method not implemented.");
+    const value = this.evaluate(stmt.$expr);
+    print(value);
+    return null;
   }
   varDefStmt(stmt: VarDefStmt): Primitive {
     throw new Error("Method not implemented.");
@@ -3438,7 +3599,7 @@ class Interpreter implements Visitor<Primitive> {
     throw new Error("Method not implemented.");
   }
   expressionStmt(stmt: ExprStmt): Primitive {
-    throw new Error("Method not implemented.");
+    return this.evaluate(stmt.$expression);
   }
   fnDefStmt(stmt: FnDefStmt): Primitive {
     throw new Error("Method not implemented.");
@@ -3447,3 +3608,31 @@ class Interpreter implements Visitor<Primitive> {
     throw new Error("Method not implemented.");
   }
 }
+
+const compiler = () => {
+  return {
+    tokens(code: string) {
+      return lexicalAnalysis(code).stream();
+    },
+    ast(code: string) {
+      return syntaxAnalysis(code).statements();
+    },
+    execute(code: string) {
+      const ast = syntaxAnalysis(code).statements();
+      if (ast.isLeft()) {
+        return ast;
+      }
+      const interpreter = new Interpreter();
+      const out = interpreter.interpret(ast.unwrap());
+      if (out.isLeft()) {
+        return out;
+      }
+      return out.unwrap();
+    },
+  };
+};
+
+const j = compiler().execute(`
+print 5!
+`);
+// print(j);

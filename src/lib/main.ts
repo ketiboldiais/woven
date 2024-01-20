@@ -376,6 +376,11 @@ type Primitive = number | string | boolean | null | Fraction | Scinum | Err;
 
 /** A class corresponding to a token. */
 class Token<L extends Primitive = any> {
+  /**
+   * Returns true if this token
+   * is a right delimiter (
+   * either `)`, `}`, or `]`).
+   */
   isRightDelimiter() {
     return (
       this.$type === TokenType.RIGHT_PAREN ||
@@ -383,11 +388,17 @@ class Token<L extends Primitive = any> {
       this.$type === TokenType.RIGHT_BRACE
     );
   }
+
+  /** The token’s type. */
+  $type: TokenType;
+
+  /**
+   * Returns true if this token is of the
+   * given type, false otherwise.
+   */
   is(type: TokenType) {
     return this.$type === type;
   }
-  /** The token’s type. */
-  $type: TokenType;
 
   /** Returns a copy of this token with the provided token type. */
   type<K extends TokenType>(tokenType: K) {
@@ -436,6 +447,10 @@ class Token<L extends Primitive = any> {
     return out as any as Token<X>;
   }
 
+  /**
+   * Returns a string representation of this
+   * token.
+   */
   toString() {
     const typename = TokenType[this.$type];
     return `[${typename} “${this.$lexeme}” L${this.$line} C${this.$column}]`;
@@ -451,18 +466,14 @@ class Token<L extends Primitive = any> {
     );
   }
 
-  constructor(
-    type: TokenType,
-    lexeme: string,
-    literal: L,
-    line: number,
-    column: number,
-  ) {
-    this.$type = type;
-    this.$lexeme = lexeme;
-    this.$line = line;
-    this.$column = column;
-    this.$literal = literal;
+  /**
+   * Returns true if this token
+   * is a nil literal token.
+   */
+  isNilToken(): this is Token<null> {
+    return (
+      this.$type === TokenType.NIL
+    );
   }
 
   /**
@@ -473,6 +484,26 @@ class Token<L extends Primitive = any> {
     return (this.$type === TokenType.INT) || (
       this.$type === TokenType.FLOAT
     );
+  }
+
+  /**
+   * Returns true, and asserts, if this token is a
+   * string literal token.
+   */
+  isStringToken(): this is Token<string> {
+    return (
+      this.$type === TokenType.STRING
+    );
+  }
+
+  /**
+   * Returns true if this token is the
+   * empty token (its type is TokenType.EMPTY).
+   * The empty token is used as a placeholder
+   * token.
+   */
+  isEmpty() {
+    return this.$type === TokenType.EMPTY;
   }
 
   /**
@@ -489,12 +520,30 @@ class Token<L extends Primitive = any> {
     return out;
   }
 
+  /**
+   * The empty token.
+   */
   static empty: Token<any> = new Token(TokenType.EMPTY, "", null, -1, -1);
+
+  /**
+   * Returns a new END token.
+   */
   static END() {
     return new Token(TokenType.END, "END", null, -1, -1);
   }
-  isEmpty() {
-    return this.$type === TokenType.EMPTY;
+
+  constructor(
+    type: TokenType,
+    lexeme: string,
+    literal: L,
+    line: number,
+    column: number,
+  ) {
+    this.$type = type;
+    this.$lexeme = lexeme;
+    this.$line = line;
+    this.$column = column;
+    this.$literal = literal;
   }
 }
 
@@ -972,9 +1021,10 @@ export function lexicalAnalysis(code: string) {
     // Now take the lexeme thus far.
     // This lexeme includes the double-quotes,
     // so we remove them with `slice(1,-1).`
-    const lexeme = slice().slice(1, -1);
+    const lexeme = slice();
+    const literal = lexeme.slice(1, -1);
 
-    return newToken(TokenType.STRING, lexeme);
+    return newToken(TokenType.STRING, lexeme, literal);
   };
 
   /**
@@ -1405,9 +1455,11 @@ enum NodeKind {
   int,
   float,
   nil,
+  string,
   assignExpr,
   binaryExpr,
   callExpr,
+  relationExpr,
   groupExpr,
   logicalBinaryExpr,
   unaryExpr,
@@ -1418,27 +1470,38 @@ enum NodeKind {
   condStmt,
 }
 
-interface ExprVisitor<T> {
+interface Visitor<T> {
   intExpr(expr: IntExpr): T;
   floatExpr(expr: FloatExpr): T;
   nilExpr(expr: NilExpr): T;
+  stringExpr(expr: StringExpr): T;
   assignExpr(expr: AssignExpr): T;
   binaryExpr(expr: BinaryExpr): T;
+  logicalBinaryExpr(expr: LogicalBinaryExpr): T;
+  relationExpr(expr: RelationExpr): T;
   callExpr(expr: CallExpr): T;
   groupExpr(expr: GroupExpr): T;
-  logicalBinaryExpr(expr: LogicalBinaryExpr): T;
   unaryExpr(expr: UnaryExpr): T;
   variable(expr: Variable): T;
+  block(stmt: BlockStmt): T;
+  expression(stmt: ExprStmt): T;
+  fnDef(stmt: FnDefStmt): T;
+  conditional(stmt: ConditionalStmt): T;
 }
 
+/**
+ * A class corresponding to an ASTNode.
+ */
 abstract class ASTNode {
   abstract kind(): NodeKind;
 }
 
+/**
+ * A class corresponding to an expression node.
+ */
 abstract class Expr extends ASTNode {
-  abstract accept<T>(ExprVisitor: ExprVisitor<T>): T;
+  abstract accept<T>(Visitor: Visitor<T>): T;
 }
-
 
 /**
  * A class corresponding to a nil literal expression.
@@ -1448,13 +1511,17 @@ class NilExpr extends Expr {
   constructor() {
     super();
   }
-  accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.nilExpr(this);
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.nilExpr(this);
   }
   kind(): NodeKind {
     return NodeKind.nil;
   }
 }
+
+/**
+ * Returns a new null literal node.
+ */
 const nil = () => (new NilExpr());
 
 /**
@@ -1466,13 +1533,20 @@ class IntExpr extends Expr {
     super();
     this.$value = floor(value);
   }
-  accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.intExpr(this);
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.intExpr(this);
   }
   kind(): NodeKind {
     return NodeKind.int;
   }
 }
+
+/**
+ * Returns a new integer literal node.
+ */
+const int = (value: number) => (
+  new IntExpr(value)
+);
 
 /**
  * A class corresponding to an float literal expression.
@@ -1483,22 +1557,19 @@ class FloatExpr extends Expr {
     super();
     this.$value = value;
   }
-  accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.floatExpr(this);
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.floatExpr(this);
   }
   kind(): NodeKind {
     return NodeKind.float;
   }
 }
-const float = (value:number) => (
-  new FloatExpr(value)
-)
 
 /**
- * Returns a new literal node.
+ * Returns a new float literal node.
  */
-const int = (value: number) => (
-  new IntExpr(value)
+const float = (value: number) => (
+  new FloatExpr(value)
 );
 
 /** A class corresponding to an Assignment node. */
@@ -1510,13 +1581,36 @@ class AssignExpr extends Expr {
     this.$name = name;
     this.$value = value;
   }
-  accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.assignExpr(this);
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.assignExpr(this);
   }
   kind(): NodeKind {
     return NodeKind.assignExpr;
   }
 }
+
+/**
+ * A class corresponding to a string literal expression.
+ */
+class StringExpr extends Expr {
+  $value: string;
+  constructor(value: string) {
+    super();
+    this.$value = value;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.stringExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.string;
+  }
+}
+/**
+ * Returns a new string literal expression.
+ */
+const str = (value: string) => (
+  new StringExpr(value)
+);
 
 /**
  * Returns a new assignment node.
@@ -1527,8 +1621,13 @@ const assign = (name: Token, value: Expr) => (
 
 /** A class corresponding to a binary expression. */
 class BinaryExpr extends Expr {
+  /** The left operand of this binary expression. */
   $left: Expr;
+
+  /** The operator of this binary expression. */
   $op: Token;
+
+  /** The right operand of this binary expression. */
   $right: Expr;
   constructor(left: Expr, op: Token, right: Expr) {
     super();
@@ -1536,8 +1635,8 @@ class BinaryExpr extends Expr {
     this.$op = op;
     this.$right = right;
   }
-  accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.binaryExpr(this);
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.binaryExpr(this);
   }
   kind(): NodeKind {
     return NodeKind.binaryExpr;
@@ -1548,8 +1647,13 @@ class BinaryExpr extends Expr {
  * A class corresponding to a logical binary expression.
  */
 class LogicalBinaryExpr extends Expr {
+  /** The left operand of this logical binary expression. */
   $left: Expr;
+
+  /** The operator of this logical binary expression. */
   $op: Token;
+
+  /** The right operand of this logical binary expression. */
   $right: Expr;
   constructor(left: Expr, op: Token, right: Expr) {
     super();
@@ -1557,13 +1661,46 @@ class LogicalBinaryExpr extends Expr {
     this.$op = op;
     this.$right = right;
   }
-  accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.logicalBinaryExpr(this);
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.logicalBinaryExpr(this);
   }
   kind(): NodeKind {
     return NodeKind.logicalBinaryExpr;
   }
 }
+
+/**
+ * A class corresponding to a relation expression.
+ */
+class RelationExpr extends Expr {
+  /** The left operand of this relation expression. */
+  $left: Expr;
+
+  /** The operator of this relation expression. */
+  $op: Token;
+
+  /** The right operand of this relation expression. */
+  $right: Expr;
+  constructor(left: Expr, op: Token, right: Expr) {
+    super();
+    this.$left=left;
+    this.$op=op;
+    this.$right=right;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.relationExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.relationExpr;
+  }
+}
+
+/**
+ * Returns a new relation expression.
+ */
+const relation = (left: Expr, op: Token, right: Expr) => (
+  new RelationExpr(left, op, right)
+)
 
 /**
  * A class corresponding to a unary expression.
@@ -1576,8 +1713,8 @@ class UnaryExpr extends Expr {
     this.$op = op;
     this.$arg = arg;
   }
-  accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.unaryExpr(this);
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.unaryExpr(this);
   }
   kind(): NodeKind {
     return NodeKind.unaryExpr;
@@ -1618,8 +1755,8 @@ class CallExpr extends Expr {
     this.$paren = paren;
     this.$args = args;
   }
-  accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.callExpr(this);
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.callExpr(this);
   }
   kind(): NodeKind {
     return NodeKind.callExpr;
@@ -1642,8 +1779,8 @@ class GroupExpr extends Expr {
     super();
     this.$inner = innerExpression;
   }
-  accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.groupExpr(this);
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.groupExpr(this);
   }
   kind(): NodeKind {
     return NodeKind.groupExpr;
@@ -1666,8 +1803,8 @@ class Variable extends Expr {
     super();
     this.$name = name;
   }
-  accept<T>(ExprVisitor: ExprVisitor<T>): T {
-    return ExprVisitor.variable(this);
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.variable(this);
   }
   kind(): NodeKind {
     return NodeKind.variableExpr;
@@ -1677,15 +1814,8 @@ const variable = (name: Token) => (
   new Variable(name)
 );
 
-interface StatementVisitor<T> {
-  block(stmt: BlockStmt): T;
-  expression(stmt: ExprStmt): T;
-  fnDef(stmt: FnDefStmt): T;
-  conditional(stmt: ConditionalStmt): T;
-}
-
 abstract class Statement extends ASTNode {
-  abstract accept<T>(visitor: StatementVisitor<T>): T;
+  abstract accept<T>(visitor: Visitor<T>): T;
 }
 
 /**
@@ -1697,7 +1827,7 @@ class BlockStmt extends Statement {
     super();
     this.$statements = statements;
   }
-  accept<T>(visitor: StatementVisitor<T>): T {
+  accept<T>(visitor: Visitor<T>): T {
     return visitor.block(this);
   }
   kind(): NodeKind {
@@ -1721,7 +1851,7 @@ class ExprStmt extends Statement {
     super();
     this.$expression = expression;
   }
-  accept<T>(visitor: StatementVisitor<T>): T {
+  accept<T>(visitor: Visitor<T>): T {
     return visitor.expression(this);
   }
   kind(): NodeKind {
@@ -1750,7 +1880,7 @@ class FnDefStmt extends Statement {
     this.$params = params;
     this.$body = body;
   }
-  accept<T>(visitor: StatementVisitor<T>): T {
+  accept<T>(visitor: Visitor<T>): T {
     return visitor.fnDef(this);
   }
   kind(): NodeKind {
@@ -1776,7 +1906,7 @@ class ConditionalStmt extends Statement {
     this.$then = thenBranch;
     this.$else = elseBranch;
   }
-  accept<T>(visitor: StatementVisitor<T>): T {
+  accept<T>(visitor: Visitor<T>): T {
     return visitor.conditional(this);
   }
   kind(): NodeKind {
@@ -1800,7 +1930,7 @@ enum BP {
   LOWEST,
   STRINGOP,
   ASSIGN,
-  ATOM,
+  LITERAL,
   OR,
   NOR,
   AND,
@@ -1932,10 +2062,23 @@ class ParserState {
       this.$error !== null
     );
   }
-  constructor(code: string) {
-    this.$lexer = lexicalAnalysis(code);
-    this.next();
+
+  /**
+   * Returns true if the parser can assume
+   * there exists a semicolon. In Woven,
+   * there are two situations where we
+   * assume a semicolon:
+   *
+   * 1. If we’ve reached the end of the code.
+   * 2. The next token is an END token.
+   */
+  canAssumeSemicolon() {
+    return (
+      this.$peek.is(TokenType.END) ||
+      this.atEnd()
+    );
   }
+
   /**
    * Returns a new Right<Statement>
    */
@@ -1948,6 +2091,11 @@ class ParserState {
   expr(expr: Expr) {
     return right(expr);
   }
+
+  constructor(code: string) {
+    this.$lexer = lexicalAnalysis(code);
+    this.next();
+  }
 }
 const enstate = (code: string) => (
   new ParserState(code)
@@ -1957,26 +2105,62 @@ function syntaxAnalysis(code: string) {
   const state = enstate(code);
 
   /**
-   * A parse rule that parses an integer.
+   * A parse rule that parses a numeric
+   * literal (a float or an integer).
    */
-  const number: ParseRule<Expr> = (t) => {
-    if (t.isNumericToken()) {
-      if (t.is(TokenType.FLOAT)) {
-        return state.expr(float(t.$literal));
+  const number: ParseRule<Expr> = (token) => {
+    if (token.isNumericToken()) {
+      if (token.is(TokenType.FLOAT)) {
+        return state.expr(float(token.$literal));
       } else {
-        return state.expr(int(t.$literal));
+        return state.expr(int(token.$literal));
       }
     } else {
       return state.error(
-        `Expected an integer, but got ${t.$lexeme}`,
+        `Expected an integer, but got ${token.$lexeme}`,
         `parsing an integer`,
       );
     }
   };
 
+  const nilValue: ParseRule<Expr> = (token) => {
+    if (token.isNilToken()) {
+      return state.expr(nil());
+    } else {
+      return state.error(
+        `Expected an nil literal, but got ${token.$lexeme}`,
+        `parsing a nil literal`,
+      );
+    }
+  };
+
+  /**
+   * Parses a string literal.
+   */
+  const string: ParseRule<Expr> = (token) => {
+    if (token.isStringToken()) {
+      return state.expr(str(token.$literal));
+    } else {
+      return state.error(
+        `Expected a string literal, but got “${token.$lexeme}”`,
+        `parsing a string`,
+      );
+    }
+  };
+
+  const compare: ParseRule<Expr> = (op, lhs) => {
+    return expr().chain((rhs) => {
+      return state.expr(
+        relation(lhs, op, rhs),
+      );
+    });
+  };
+
+  /**
+   * Parses an infix expression.
+   */
   const infix: ParseRule<Expr> = (op, lhs) => {
-    const p = precOf(op.$type);
-    const rhs = expr(p);
+    const rhs = expr();
     if (rhs.isLeft()) {
       return rhs;
     }
@@ -2012,7 +2196,32 @@ function syntaxAnalysis(code: string) {
       );
     }
   };
+
   const rules: ParseRuleTable<Expr> = {
+    // Literals
+    [TokenType.INT]: [number, ___, BP.LITERAL],
+    [TokenType.FLOAT]: [number, ___, BP.LITERAL],
+    [TokenType.STRING]: [string, ___, BP.LITERAL],
+    [TokenType.NIL]: [nilValue, ___, BP.LITERAL],
+
+    // Algebraic Operators
+    [TokenType.PLUS]: [___, infix, BP.SUM],
+    [TokenType.MINUS]: [___, infix, BP.DIFFERENCE],
+    [TokenType.STAR]: [___, infix, BP.PRODUCT],
+    [TokenType.SLASH]: [___, infix, BP.QUOTIENT],
+    [TokenType.REM]: [___, infix, BP.QUOTIENT],
+    [TokenType.MOD]: [___, infix, BP.QUOTIENT],
+    [TokenType.DIV]: [___, infix, BP.QUOTIENT],
+    [TokenType.CARET]: [___, infix, BP.POWER],
+
+    // Comparison Operators
+    [TokenType.EQUAL_EQUAL]: [___, ___, ___o],
+    [TokenType.BANG_EQUAL]: [___, ___, ___o],
+    [TokenType.LESS]: [___, ___, ___o],
+    [TokenType.GREATER]: [___, ___, ___o],
+    [TokenType.LESS_EQUAL]: [___, ___, ___o],
+    [TokenType.GREATER_EQUAL]: [___, ___, ___o],
+
     [TokenType.LEFT_PAREN]: [___, ___, ___o],
     [TokenType.RIGHT_PAREN]: [___, ___, ___o],
     [TokenType.LEFT_BRACE]: [___, ___, ___o],
@@ -2026,38 +2235,21 @@ function syntaxAnalysis(code: string) {
     [TokenType.VBAR]: [___, ___, ___o],
     [TokenType.AMPERSAND]: [___, ___, ___o],
     [TokenType.TILDE]: [___, ___, ___o],
-    [TokenType.SLASH]: [___, ___, ___o],
-    [TokenType.CARET]: [___, ___, ___o],
-    [TokenType.MINUS]: [___, ___, ___o],
     [TokenType.MINUS_MINUS]: [___, ___, ___o],
-    [TokenType.PLUS]: [___, infix, BP.SUM],
     [TokenType.PLUS_PLUS]: [___, ___, ___o],
-    [TokenType.STAR]: [___, ___, ___o],
     [TokenType.PERCENT]: [___, ___, ___o],
     [TokenType.BANG]: [___, ___, ___o],
     [TokenType.EQUAL]: [___, ___, ___o],
-    [TokenType.EQUAL_EQUAL]: [___, ___, ___o],
-    [TokenType.BANG_EQUAL]: [___, ___, ___o],
-    [TokenType.LESS]: [___, ___, ___o],
-    [TokenType.GREATER]: [___, ___, ___o],
-    [TokenType.LESS_EQUAL]: [___, ___, ___o],
-    [TokenType.GREATER_EQUAL]: [___, ___, ___o],
     [TokenType.AND]: [___, ___, ___o],
     [TokenType.OR]: [___, ___, ___o],
     [TokenType.NOT]: [___, ___, ___o],
-    [TokenType.REM]: [___, ___, ___o],
-    [TokenType.MOD]: [___, ___, ___o],
-    [TokenType.DIV]: [___, ___, ___o],
     [TokenType.NOR]: [___, ___, ___o],
     [TokenType.XOR]: [___, ___, ___o],
     [TokenType.XNOR]: [___, ___, ___o],
     [TokenType.NAND]: [___, ___, ___o],
     [TokenType.SYMBOL]: [___, ___, ___o],
-    [TokenType.INT]: [number, ___, BP.ATOM],
-    [TokenType.FLOAT]: [number, ___, BP.ATOM],
     [TokenType.SCIENTIFIC_NUMBER]: [___, ___, ___o],
     [TokenType.FRACTION]: [___, ___, ___o],
-    [TokenType.STRING]: [___, ___, ___o],
     [TokenType.CLASS]: [___, ___, ___o],
     [TokenType.IF]: [___, ___, ___o],
     [TokenType.ELSE]: [___, ___, ___o],
@@ -2065,7 +2257,6 @@ function syntaxAnalysis(code: string) {
     [TokenType.FALSE]: [___, ___, ___o],
     [TokenType.FOR]: [___, ___, ___o],
     [TokenType.FN]: [___, ___, ___o],
-    [TokenType.NIL]: [___, ___, ___o],
     [TokenType.PRINT]: [___, ___, ___o],
     [TokenType.RETURN]: [___, ___, ___o],
     [TokenType.SUPER]: [___, ___, ___o],
@@ -2132,7 +2323,7 @@ function syntaxAnalysis(code: string) {
       return out;
     }
     const expression = out.unwrap();
-    if (state.nextIs(TokenType.SEMICOLON)) {
+    if (state.nextIs(TokenType.SEMICOLON) || state.canAssumeSemicolon()) {
       return state.statement(exprStmt(expression));
     }
     return state.error(
@@ -2161,8 +2352,8 @@ function syntaxAnalysis(code: string) {
   };
 }
 
-const test = syntaxAnalysis(
-  `1 + 2;`,
-);
+const test = syntaxAnalysis(`
+"hello"
+`);
 const out = test.statements();
 print(treed(out));

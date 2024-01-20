@@ -318,7 +318,7 @@ enum TokenType {
   NAND,
 
   /** Literal token: symbol */
-  SYMBOL,
+  IDENTIFIER,
   /** Literal token: integer */
   INT,
   /** Literal token: float */
@@ -376,19 +376,6 @@ type Primitive = number | string | boolean | null | Fraction | Scinum | Err;
 
 /** A class corresponding to a token. */
 class Token<L extends Primitive = any> {
-  /**
-   * Returns true if this token
-   * is a right delimiter (
-   * either `)`, `}`, or `]`).
-   */
-  isRightDelimiter() {
-    return (
-      this.$type === TokenType.RIGHT_PAREN ||
-      this.$type === TokenType.RIGHT_BRACKET ||
-      this.$type === TokenType.RIGHT_BRACE
-    );
-  }
-
   /** The token’s type. */
   $type: TokenType;
 
@@ -457,6 +444,16 @@ class Token<L extends Primitive = any> {
   }
 
   /**
+   * Returns true if this token is the
+   * empty token (its type is TokenType.EMPTY).
+   * The empty token is used as a placeholder
+   * token.
+   */
+  isEmpty() {
+    return this.$type === TokenType.EMPTY;
+  }
+
+  /**
    * Returns true if this
    * token is an error token.
    */
@@ -473,6 +470,16 @@ class Token<L extends Primitive = any> {
   isNilToken(): this is Token<null> {
     return (
       this.$type === TokenType.NIL
+    );
+  }
+
+  /**
+   * Returns true if this token
+   * is an identifier token.
+   */
+  isIdentifier() {
+    return (
+      this.$type === TokenType.IDENTIFIER
     );
   }
 
@@ -530,13 +537,16 @@ class Token<L extends Primitive = any> {
   }
 
   /**
-   * Returns true if this token is the
-   * empty token (its type is TokenType.EMPTY).
-   * The empty token is used as a placeholder
-   * token.
+   * Returns true if this token
+   * is a right delimiter (
+   * either `)`, `}`, or `]`).
    */
-  isEmpty() {
-    return this.$type === TokenType.EMPTY;
+  isRightDelimiter() {
+    return (
+      this.$type === TokenType.RIGHT_PAREN ||
+      this.$type === TokenType.RIGHT_BRACKET ||
+      this.$type === TokenType.RIGHT_BRACE
+    );
   }
 
   /**
@@ -1005,7 +1015,7 @@ export function lexicalAnalysis(code: string) {
     // the lexeme thus far is a user
     // symbol (e.g., a variable name,
     // a function name, etc.)
-    return newToken(TokenType.SYMBOL);
+    return newToken(TokenType.IDENTIFIER);
   };
 
   /**
@@ -1492,6 +1502,8 @@ enum NodeKind {
   nil,
   string,
   boolean,
+  NaN,
+  Inf,
   assignExpr,
   binaryExpr,
   callExpr,
@@ -1511,6 +1523,8 @@ interface Visitor<T> {
   floatExpr(expr: FloatExpr): T;
   fracExpr(expr: FracExpr): T;
   scinumExpr(expr: ScinumExpr): T;
+  NaNExpr(expr: NaNExpr): T;
+  infExpr(expr: InfExpr): T;
   nilExpr(expr: NilExpr): T;
   stringExpr(expr: StringExpr): T;
   booleanExpr(expr: BooleanExpr): T;
@@ -1586,6 +1600,46 @@ class IntExpr extends Expr {
 const int = (value: number) => (
   new IntExpr(value)
 );
+
+/**
+ * A class corresponding to a NaN literal expression.
+ */
+class NaNExpr extends Expr {
+  $value: number = NaN;
+  constructor() {
+    super();
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.NaNExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.NaN;
+  }
+}
+
+/** Returns a new NaN literal. */
+const NAN = () => (new NaNExpr());
+
+/**
+ * A class corresponding to an Inf literal expression.
+ */
+class InfExpr extends Expr {
+  $value: number = Infinity;
+  constructor() {
+    super();
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.infExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.Inf;
+  }
+}
+
+/**
+ * Returns a new Inf literal experssion.
+ */
+const INF = () => (new InfExpr());
 
 /**
  * A class corresponding to an float literal expression.
@@ -1809,6 +1863,10 @@ const relation = (left: Expr, op: Token, right: Expr) => (
 
 /**
  * A class corresponding to a unary expression.
+ * There are only two unary expressions in Woven:
+ *
+ * 1. the not-expression ('not'), and
+ * 2. the factorial-expression ('!')
  */
 class UnaryExpr extends Expr {
   $op: Token;
@@ -1836,7 +1894,7 @@ const unaryExpr = (op: Token, arg: Expr) => (
 /**
  * Returns a new logical binary expression node.
  */
-const logicalBinaryExpr = (left: Expr, op: Token, right: Expr) => (
+const logicalBinex = (left: Expr, op: Token, right: Expr) => (
   new LogicalBinaryExpr(left, op, right)
 );
 
@@ -2257,6 +2315,20 @@ function syntaxAnalysis(code: string) {
   };
 
   /**
+   * Parses an Inf literal.
+   */
+  const infExpr: ParseRule<Expr> = () => {
+    return state.expr(INF());
+  };
+
+  /**
+   * Parses a NaN literal.
+   */
+  const nanExpr: ParseRule<Expr> = () => {
+    return state.expr(NAN());
+  };
+
+  /**
    * Parses a fraction.
    */
   const fraction: ParseRule<Expr> = (token) => {
@@ -2298,6 +2370,24 @@ function syntaxAnalysis(code: string) {
     }
   };
 
+  /**
+   * Parses an identifier.
+   */
+  const identifier: ParseRule<Expr> = (token) => {
+    if (token.isIdentifier()) {
+      const out = variable(token);
+      return state.expr(out);
+    } else {
+      return state.error(
+        `Expected an identifier, but got “${token.$lexeme}”`,
+        `parsing an identifier`,
+      );
+    }
+  };
+
+  /**
+   * Parses a comparison expression.
+   */
   const compare: ParseRule<Expr> = (op, lhs) => {
     return expr().chain((rhs) => {
       return state.expr(
@@ -2322,6 +2412,42 @@ function syntaxAnalysis(code: string) {
     return state.expr(out);
   };
 
+  /**
+   * Parses a logical infix expression.
+   */
+  const logicalInfix: ParseRule<Expr> = (op, lhs) => {
+    const rhs = expr(precOf(op.$type));
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const out = logicalBinex(
+      lhs,
+      op,
+      rhs.unwrap(),
+    );
+    return state.expr(out);
+  };
+
+  /**
+   * Parses a factorial expression.
+   */
+  const factorialExpression = (op: Token, arg: Expr) => {
+    return state.expr(unaryExpr(op, arg));
+  };
+
+  /**
+   * Parses a unary expression.
+   */
+  const unary: ParseRule<Expr> = (op) => {
+    const p = precOf(op.$type);
+    return expr(p).chain((arg) => {
+      return state.expr(unaryExpr(op, arg));
+    });
+  };
+
+  /**
+   * Parses a parenthesized expression.
+   */
   const primary: ParseRule<Expr> = () => {
     const innerExpr = expr();
     if (innerExpr.isLeft()) {
@@ -2369,6 +2495,9 @@ function syntaxAnalysis(code: string) {
     [TokenType.NIL]: [nilValue, ___, BP.LITERAL],
     [TokenType.SCIENTIFIC_NUMBER]: [scientific, ___, BP.LITERAL],
     [TokenType.FRACTION]: [fraction, ___, BP.LITERAL],
+    [TokenType.TRUE]: [boolean, ___, BP.LITERAL],
+    [TokenType.FALSE]: [boolean, ___, BP.LITERAL],
+    [TokenType.IDENTIFIER]: [identifier, ___, BP.LITERAL],
 
     // Algebraic Operators
     [TokenType.PLUS]: [___, infix, BP.SUM],
@@ -2379,6 +2508,16 @@ function syntaxAnalysis(code: string) {
     [TokenType.MOD]: [___, infix, BP.QUOTIENT],
     [TokenType.DIV]: [___, infix, BP.QUOTIENT],
     [TokenType.CARET]: [___, infix, BP.POWER],
+    [TokenType.BANG]: [___, factorialExpression, BP.POSTFIX],
+
+    // Logical Operators
+    [TokenType.AND]: [___, logicalInfix, BP.AND],
+    [TokenType.OR]: [___, logicalInfix, BP.OR],
+    [TokenType.NOR]: [___, logicalInfix, BP.NOR],
+    [TokenType.XOR]: [___, logicalInfix, BP.XOR],
+    [TokenType.XNOR]: [___, logicalInfix, BP.XNOR],
+    [TokenType.NAND]: [___, logicalInfix, BP.NAND],
+    [TokenType.NOT]: [unary, ___, BP.NOT],
 
     // Comparison Operators
     [TokenType.EQUAL_EQUAL]: [___, compare, BP.EQUALITY],
@@ -2392,6 +2531,7 @@ function syntaxAnalysis(code: string) {
     [TokenType.LEFT_PAREN]: [primary, ___, BP.CALL],
     [TokenType.RIGHT_PAREN]: [___, ___, ___o],
 
+    // Not handled by the Pratt parsing function (`expr`).
     [TokenType.LEFT_BRACE]: [___, ___, ___o],
     [TokenType.RIGHT_BRACE]: [___, ___, ___o],
     [TokenType.LEFT_BRACKET]: [___, ___, ___o],
@@ -2406,22 +2546,10 @@ function syntaxAnalysis(code: string) {
     [TokenType.MINUS_MINUS]: [___, ___, ___o],
     [TokenType.PLUS_PLUS]: [___, ___, ___o],
     [TokenType.PERCENT]: [___, ___, ___o],
-    [TokenType.BANG]: [___, ___, ___o],
     [TokenType.EQUAL]: [___, ___, ___o],
-    [TokenType.AND]: [___, ___, ___o],
-    [TokenType.OR]: [___, ___, ___o],
-    [TokenType.NOT]: [___, ___, ___o],
-    [TokenType.NOR]: [___, ___, ___o],
-    [TokenType.XOR]: [___, ___, ___o],
-    [TokenType.XNOR]: [___, ___, ___o],
-    [TokenType.NAND]: [___, ___, ___o],
-    [TokenType.SYMBOL]: [___, ___, ___o],
-
     [TokenType.CLASS]: [___, ___, ___o],
     [TokenType.IF]: [___, ___, ___o],
     [TokenType.ELSE]: [___, ___, ___o],
-    [TokenType.TRUE]: [___, ___, ___o],
-    [TokenType.FALSE]: [___, ___, ___o],
     [TokenType.FOR]: [___, ___, ___o],
     [TokenType.FN]: [___, ___, ___o],
     [TokenType.PRINT]: [___, ___, ___o],
@@ -2463,6 +2591,10 @@ function syntaxAnalysis(code: string) {
     rules[type][2]
   );
 
+  /**
+   * Performs a Pratt parsing for an
+   * expression.
+   */
   const expr = (minBP: BP = BP.LOWEST) => {
     let token = state.next();
     const prefix = prefixRule(token.$type);
@@ -2502,6 +2634,10 @@ function syntaxAnalysis(code: string) {
     return expression();
   };
   return {
+    /**
+     * Returns the statements parsed
+     * from the given code.
+     */
     statements() {
       if (state.$error !== null) {
         return left(state.$error);
@@ -2520,7 +2656,7 @@ function syntaxAnalysis(code: string) {
 }
 
 const test = syntaxAnalysis(`
-1 * (3|4)
+4! + 8
 `);
 const out = test.statements();
 print(treed(out));

@@ -478,11 +478,44 @@ class Token<L extends Primitive = any> {
 
   /**
    * Returns true, and asserts,
-   * that this token is an integer token.
+   * if this token is an integer token.
    */
   isNumericToken(): this is Token<number> {
     return (this.$type === TokenType.INT) || (
       this.$type === TokenType.FLOAT
+    );
+  }
+
+  /**
+   * Returns true, and asserts,
+   * if this token is a scientific
+   * number token.
+   */
+  isScientificNumber(): this is Token<Scinum> {
+    return (
+      this.$type === TokenType.SCIENTIFIC_NUMBER
+    );
+  }
+
+  /**
+   * Returns true, and asserts,
+   * if this token is a boolean token
+   * (a token of type TRUE or FALSE).
+   */
+  isBoolean(): this is Token<boolean> {
+    return (
+      this.$type === TokenType.TRUE ||
+      this.$type === TokenType.FALSE
+    );
+  }
+
+  /**
+   * Returns true, and asserts,
+   * if this token is a fraction token.
+   */
+  isFraction(): this is Token<Fraction> {
+    return (
+      this.$type === TokenType.FRACTION
     );
   }
 
@@ -1454,8 +1487,11 @@ export function lexicalAnalysis(code: string) {
 enum NodeKind {
   int,
   float,
+  fraction,
+  scinum,
   nil,
   string,
+  boolean,
   assignExpr,
   binaryExpr,
   callExpr,
@@ -1473,8 +1509,11 @@ enum NodeKind {
 interface Visitor<T> {
   intExpr(expr: IntExpr): T;
   floatExpr(expr: FloatExpr): T;
+  fracExpr(expr: FracExpr): T;
+  scinumExpr(expr: ScinumExpr): T;
   nilExpr(expr: NilExpr): T;
   stringExpr(expr: StringExpr): T;
+  booleanExpr(expr: BooleanExpr): T;
   assignExpr(expr: AssignExpr): T;
   binaryExpr(expr: BinaryExpr): T;
   logicalBinaryExpr(expr: LogicalBinaryExpr): T;
@@ -1566,6 +1605,55 @@ class FloatExpr extends Expr {
 }
 
 /**
+ * A class corresponding to a fraction literal expression.
+ */
+class FracExpr extends Expr {
+  $value: Fraction;
+  constructor(value: Fraction) {
+    super();
+    this.$value = value;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.fracExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.fraction;
+  }
+}
+
+/**
+ * Returns a new fraction literal node.
+ */
+const fracExpr = (value: Fraction) => (
+  new FracExpr(value)
+);
+
+/**
+ * A class corresponding to a scientific
+ * number literal node.
+ */
+class ScinumExpr extends Expr {
+  $value: Scinum;
+  constructor(value: Scinum) {
+    super();
+    this.$value = value;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.scinumExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.scinum;
+  }
+}
+
+/**
+ * Returns a new scientific number literal node.
+ */
+const scinumExpr = (value: Scinum) => (
+  new ScinumExpr(value)
+);
+
+/**
  * Returns a new float literal node.
  */
 const float = (value: number) => (
@@ -1610,6 +1698,23 @@ class StringExpr extends Expr {
  */
 const str = (value: string) => (
   new StringExpr(value)
+);
+
+class BooleanExpr extends Expr {
+  $value: boolean;
+  constructor(value: boolean) {
+    super();
+    this.$value = value;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.booleanExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.boolean;
+  }
+}
+const bool = (value: boolean) => (
+  new BooleanExpr(value)
 );
 
 /**
@@ -1683,9 +1788,9 @@ class RelationExpr extends Expr {
   $right: Expr;
   constructor(left: Expr, op: Token, right: Expr) {
     super();
-    this.$left=left;
-    this.$op=op;
-    this.$right=right;
+    this.$left = left;
+    this.$op = op;
+    this.$right = right;
   }
   accept<T>(Visitor: Visitor<T>): T {
     return Visitor.relationExpr(this);
@@ -1700,7 +1805,7 @@ class RelationExpr extends Expr {
  */
 const relation = (left: Expr, op: Token, right: Expr) => (
   new RelationExpr(left, op, right)
-)
+);
 
 /**
  * A class corresponding to a unary expression.
@@ -1938,8 +2043,8 @@ enum BP {
   XOR,
   XNOR,
   NOT,
-  EQ,
-  REL,
+  EQUALITY,
+  RELATION,
   SUM,
   DIFFERENCE,
   PRODUCT,
@@ -2123,6 +2228,51 @@ function syntaxAnalysis(code: string) {
     }
   };
 
+  /**
+   * Parses a scientific number.
+   */
+  const scientific: ParseRule<Expr> = (token) => {
+    if (token.isScientificNumber()) {
+      return state.expr(scinumExpr(token.$literal));
+    } else {
+      return state.error(
+        `Expected a scientific number literal, but got “${token.$lexeme}”`,
+        `parsing a scientific number`,
+      );
+    }
+  };
+
+  /**
+   * Parses a boolean literal.
+   */
+  const boolean: ParseRule<Expr> = (token) => {
+    if (token.isBoolean()) {
+      return state.expr(bool(token.$literal));
+    } else {
+      return state.error(
+        `Expected a boolean literal, but got “${token.$lexeme}”`,
+        `parsing a boolean expression`,
+      );
+    }
+  };
+
+  /**
+   * Parses a fraction.
+   */
+  const fraction: ParseRule<Expr> = (token) => {
+    if (token.isFraction()) {
+      return state.expr(fracExpr(token.$literal));
+    } else {
+      return state.error(
+        `Expected a fraction literal, but got “${token.$lexeme}”`,
+        `parsing a fraction`,
+      );
+    }
+  };
+
+  /**
+   * Parses a nil literal.
+   */
   const nilValue: ParseRule<Expr> = (token) => {
     if (token.isNilToken()) {
       return state.expr(nil());
@@ -2160,7 +2310,7 @@ function syntaxAnalysis(code: string) {
    * Parses an infix expression.
    */
   const infix: ParseRule<Expr> = (op, lhs) => {
-    const rhs = expr();
+    const rhs = expr(precOf(op.$type));
     if (rhs.isLeft()) {
       return rhs;
     }
@@ -2170,6 +2320,20 @@ function syntaxAnalysis(code: string) {
       rhs.unwrap(),
     );
     return state.expr(out);
+  };
+
+  const primary: ParseRule<Expr> = () => {
+    const innerExpr = expr();
+    if (innerExpr.isLeft()) {
+      return innerExpr;
+    }
+    if (!state.nextIs(TokenType.RIGHT_PAREN)) {
+      return state.error(
+        `Expected a closing “)”`,
+        `parsing a parenthesized expression`,
+      );
+    }
+    return state.expr(groupExpr(innerExpr.unwrap()));
   };
 
   /**
@@ -2203,6 +2367,8 @@ function syntaxAnalysis(code: string) {
     [TokenType.FLOAT]: [number, ___, BP.LITERAL],
     [TokenType.STRING]: [string, ___, BP.LITERAL],
     [TokenType.NIL]: [nilValue, ___, BP.LITERAL],
+    [TokenType.SCIENTIFIC_NUMBER]: [scientific, ___, BP.LITERAL],
+    [TokenType.FRACTION]: [fraction, ___, BP.LITERAL],
 
     // Algebraic Operators
     [TokenType.PLUS]: [___, infix, BP.SUM],
@@ -2215,15 +2381,17 @@ function syntaxAnalysis(code: string) {
     [TokenType.CARET]: [___, infix, BP.POWER],
 
     // Comparison Operators
-    [TokenType.EQUAL_EQUAL]: [___, ___, ___o],
-    [TokenType.BANG_EQUAL]: [___, ___, ___o],
-    [TokenType.LESS]: [___, ___, ___o],
-    [TokenType.GREATER]: [___, ___, ___o],
-    [TokenType.LESS_EQUAL]: [___, ___, ___o],
-    [TokenType.GREATER_EQUAL]: [___, ___, ___o],
+    [TokenType.EQUAL_EQUAL]: [___, compare, BP.EQUALITY],
+    [TokenType.BANG_EQUAL]: [___, compare, BP.RELATION],
+    [TokenType.LESS]: [___, compare, BP.RELATION],
+    [TokenType.GREATER]: [___, compare, BP.RELATION],
+    [TokenType.LESS_EQUAL]: [___, compare, BP.RELATION],
+    [TokenType.GREATER_EQUAL]: [___, compare, BP.RELATION],
 
-    [TokenType.LEFT_PAREN]: [___, ___, ___o],
+    // Parenthesized Expressions
+    [TokenType.LEFT_PAREN]: [primary, ___, BP.CALL],
     [TokenType.RIGHT_PAREN]: [___, ___, ___o],
+
     [TokenType.LEFT_BRACE]: [___, ___, ___o],
     [TokenType.RIGHT_BRACE]: [___, ___, ___o],
     [TokenType.LEFT_BRACKET]: [___, ___, ___o],
@@ -2248,8 +2416,7 @@ function syntaxAnalysis(code: string) {
     [TokenType.XNOR]: [___, ___, ___o],
     [TokenType.NAND]: [___, ___, ___o],
     [TokenType.SYMBOL]: [___, ___, ___o],
-    [TokenType.SCIENTIFIC_NUMBER]: [___, ___, ___o],
-    [TokenType.FRACTION]: [___, ___, ___o],
+
     [TokenType.CLASS]: [___, ___, ___o],
     [TokenType.IF]: [___, ___, ___o],
     [TokenType.ELSE]: [___, ___, ___o],
@@ -2353,7 +2520,7 @@ function syntaxAnalysis(code: string) {
 }
 
 const test = syntaxAnalysis(`
-"hello"
+1 * (3|4)
 `);
 const out = test.statements();
 print(treed(out));

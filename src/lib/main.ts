@@ -343,9 +343,9 @@ enum TokenType {
   RETURN,
   SUPER,
   THIS,
-  LET,
   WHILE,
   NUMERIC_CONSTANT,
+  LET,
   VAR,
 
   /** Utility tokens */
@@ -1499,6 +1499,32 @@ export function lexicalAnalysis(code: string) {
   };
 }
 
+interface Visitor<T> {
+  intExpr(expr: IntExpr): T;
+  floatExpr(expr: FloatExpr): T;
+  fracExpr(expr: FracExpr): T;
+  scinumExpr(expr: ScinumExpr): T;
+  numConstExpr(expr: NumericConstExpr): T;
+  nilExpr(expr: NilExpr): T;
+  stringExpr(expr: StringExpr): T;
+  booleanExpr(expr: BooleanExpr): T;
+  assignExpr(expr: AssignExpr): T;
+  binaryExpr(expr: BinaryExpr): T;
+  logicalBinaryExpr(expr: LogicalBinaryExpr): T;
+  relationExpr(expr: RelationExpr): T;
+  callExpr(expr: CallExpr): T;
+  groupExpr(expr: GroupExpr): T;
+  unaryExpr(expr: UnaryExpr): T;
+  variable(expr: Variable): T;
+  printStmt(stmt: PrintStmt): T;
+  varDefStmt(stmt: VarDefStmt): T;
+  whileStmt(stmt: WhileStmt): T;
+  blockStmt(stmt: BlockStmt): T;
+  expressionStmt(stmt: ExprStmt): T;
+  fnDefStmt(stmt: FnDefStmt): T;
+  conditionalStmt(stmt: ConditionalStmt): T;
+}
+
 /**
  * A type corresponding to a node’s
  * kind.
@@ -1523,32 +1549,10 @@ enum NodeKind {
   blockStmt,
   exprStmt,
   fnDefStmt,
+  varDefStmt,
   condStmt,
   printStmt,
-}
-
-interface Visitor<T> {
-  intExpr(expr: IntExpr): T;
-  floatExpr(expr: FloatExpr): T;
-  fracExpr(expr: FracExpr): T;
-  scinumExpr(expr: ScinumExpr): T;
-  numConstExpr(expr: NumericConstExpr): T;
-  nilExpr(expr: NilExpr): T;
-  stringExpr(expr: StringExpr): T;
-  booleanExpr(expr: BooleanExpr): T;
-  assignExpr(expr: AssignExpr): T;
-  binaryExpr(expr: BinaryExpr): T;
-  logicalBinaryExpr(expr: LogicalBinaryExpr): T;
-  relationExpr(expr: RelationExpr): T;
-  callExpr(expr: CallExpr): T;
-  groupExpr(expr: GroupExpr): T;
-  unaryExpr(expr: UnaryExpr): T;
-  variable(expr: Variable): T;
-  printStmt(stmt: PrintStmt): T;
-  block(stmt: BlockStmt): T;
-  expression(stmt: ExprStmt): T;
-  fnDef(stmt: FnDefStmt): T;
-  conditional(stmt: ConditionalStmt): T;
+  whileStmt,
 }
 
 /**
@@ -1710,9 +1714,9 @@ const float = (value: number) => (
 
 /** A class corresponding to an Assignment node. */
 class AssignExpr extends Expr {
-  $name: Token;
+  $name: Variable;
   $value: Expr;
-  constructor(name: Token, value: Expr) {
+  constructor(name: Variable, value: Expr) {
     super();
     this.$name = name;
     this.$value = value;
@@ -1724,6 +1728,13 @@ class AssignExpr extends Expr {
     return NodeKind.assignExpr;
   }
 }
+
+/**
+ * Returns a new assignment node.
+ */
+const assign = (name: Variable, value: Expr) => (
+  new AssignExpr(name, value)
+);
 
 /**
  * A class corresponding to a string literal expression.
@@ -1763,13 +1774,6 @@ class BooleanExpr extends Expr {
 }
 const bool = (value: boolean) => (
   new BooleanExpr(value)
-);
-
-/**
- * Returns a new assignment node.
- */
-const assign = (name: Token, value: Expr) => (
-  new AssignExpr(name, value)
 );
 
 /** A class corresponding to a binary expression. */
@@ -1970,6 +1974,14 @@ class Variable extends Expr {
 const variable = (name: Token) => (
   new Variable(name)
 );
+/**
+ * Returns true, and asserts, if the
+ * given node is a variable expression
+ * (i.e., an identifier) node.
+ */
+const isVariable = (node: ASTNode): node is Variable => (
+  node.kind() === NodeKind.variableExpr
+);
 
 abstract class Statement extends ASTNode {
   abstract accept<T>(visitor: Visitor<T>): T;
@@ -1995,6 +2007,35 @@ class PrintStmt extends Statement {
 }
 
 /**
+ * A node corresponding to a variable definition
+ * statement.
+ */
+class VarDefStmt extends Statement {
+  $name: Token;
+  $value: Expr;
+  $mutable: boolean;
+  constructor(name: Token, value: Expr, mutable: boolean) {
+    super();
+    this.$name = name;
+    this.$value = value;
+    this.$mutable = mutable;
+  }
+  accept<T>(visitor: Visitor<T>): T {
+    return visitor.varDefStmt(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.varDefStmt;
+  }
+}
+
+/**
+ * Returns a new variable definition statement node.
+ */
+const varDef = (name: Token, value: Expr, mutable: boolean) => (
+  new VarDefStmt(name, value, mutable)
+);
+
+/**
  * Returns a new print statement.
  */
 const printStmt = (expr: Expr, keyword: Token) => (
@@ -2011,7 +2052,7 @@ class BlockStmt extends Statement {
     this.$statements = statements;
   }
   accept<T>(visitor: Visitor<T>): T {
-    return visitor.block(this);
+    return visitor.blockStmt(this);
   }
   kind(): NodeKind {
     return NodeKind.blockStmt;
@@ -2026,6 +2067,32 @@ const blockStmt = (statements: Statement[]) => (
 );
 
 /**
+ * A node corresponding to a while-loop statement.
+ */
+class WhileStmt extends Statement {
+  $condition: Expr;
+  $body: Statement;
+  constructor(condition: Expr, body: Statement) {
+    super();
+    this.$condition = condition;
+    this.$body = body;
+  }
+  accept<T>(visitor: Visitor<T>): T {
+    return visitor.whileStmt(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.whileStmt;
+  }
+}
+
+/**
+ * Returns a new while-loop statement node.
+ */
+const whileStmt = (condition: Expr, body: Statement) => (
+  new WhileStmt(condition, body)
+);
+
+/**
  * A class corresponding to an expression statement.
  */
 class ExprStmt extends Statement {
@@ -2035,7 +2102,7 @@ class ExprStmt extends Statement {
     this.$expression = expression;
   }
   accept<T>(visitor: Visitor<T>): T {
-    return visitor.expression(this);
+    return visitor.expressionStmt(this);
   }
   kind(): NodeKind {
     return NodeKind.exprStmt;
@@ -2064,7 +2131,7 @@ class FnDefStmt extends Statement {
     this.$body = body;
   }
   accept<T>(visitor: Visitor<T>): T {
-    return visitor.fnDef(this);
+    return visitor.fnDefStmt(this);
   }
   kind(): NodeKind {
     return NodeKind.fnDefStmt;
@@ -2090,7 +2157,7 @@ class ConditionalStmt extends Statement {
     this.$else = elseBranch;
   }
   accept<T>(visitor: Visitor<T>): T {
-    return visitor.conditional(this);
+    return visitor.conditionalStmt(this);
   }
   kind(): NodeKind {
     return NodeKind.condStmt;
@@ -2265,13 +2332,13 @@ class ParserState {
   /**
    * Returns a new Right<Statement>
    */
-  statement(stmt: Statement) {
+  statement<S extends Statement>(stmt: S) {
     return right(stmt);
   }
   /**
    * Returns a new Right<Expr>
    */
-  expr(expr: Expr) {
+  expr<E extends Expr>(expr: E) {
     return right(expr);
   }
 
@@ -2483,6 +2550,23 @@ function syntaxAnalysis(code: string) {
   };
 
   /**
+   * Parses an assignment expression.
+   */
+  const assignment: ParseRule<Expr> = (op, prevNode) => {
+    const phase = `parsing an assignment`;
+    if (isVariable(prevNode)) {
+      return expr().chain((n) => {
+        return state.expr(assign(prevNode, n));
+      });
+    } else {
+      return state.error(
+        `Expected a valid assignment target`,
+        phase,
+      );
+    }
+  };
+
+  /**
    * Alias for BP.NONE, corresponding
    * to a binding power of nothing.
    * This is used purely as a placeholder
@@ -2520,10 +2604,14 @@ function syntaxAnalysis(code: string) {
     [TokenType.IDENTIFIER]: [identifier, ___, BP.LITERAL],
     [TokenType.NUMERIC_CONSTANT]: [numericConstant, ___, BP.LITERAL],
 
+    // Assignment Operator
+    [TokenType.EQUAL]: [___, assignment, BP.ASSIGN],
+
     // Algebraic Operators
     [TokenType.PLUS]: [___, infix, BP.SUM],
     [TokenType.MINUS]: [___, infix, BP.DIFFERENCE],
     [TokenType.STAR]: [___, infix, BP.PRODUCT],
+    [TokenType.PERCENT]: [___, infix, BP.PRODUCT],
     [TokenType.SLASH]: [___, infix, BP.QUOTIENT],
     [TokenType.REM]: [___, infix, BP.QUOTIENT],
     [TokenType.MOD]: [___, infix, BP.QUOTIENT],
@@ -2560,26 +2648,24 @@ function syntaxAnalysis(code: string) {
     [TokenType.COMMA]: [___, ___, ___o],
     [TokenType.DOT]: [___, ___, ___o],
     [TokenType.COLON]: [___, ___, ___o],
-    [TokenType.SEMICOLON]: [___, ___, ___o],
-    [TokenType.VBAR]: [___, ___, ___o],
+    [TokenType.SEMICOLON]: [___, ___, ___o], // Handled by statement parsers
+    [TokenType.VBAR]: [___, ___, ___o], // Scanned as part of a fraction
     [TokenType.AMPERSAND]: [___, ___, ___o],
     [TokenType.TILDE]: [___, ___, ___o],
     [TokenType.MINUS_MINUS]: [___, ___, ___o],
     [TokenType.PLUS_PLUS]: [___, ___, ___o],
-    [TokenType.PERCENT]: [___, ___, ___o],
-    [TokenType.EQUAL]: [___, ___, ___o],
     [TokenType.CLASS]: [___, ___, ___o],
-    [TokenType.IF]: [___, ___, ___o],
-    [TokenType.ELSE]: [___, ___, ___o],
+    [TokenType.IF]: [___, ___, ___o], // Handled by `ifStatement`
+    [TokenType.ELSE]: [___, ___, ___o], // Handled by `ifStatement`
     [TokenType.FOR]: [___, ___, ___o],
     [TokenType.FN]: [___, ___, ___o],
-    [TokenType.PRINT]: [___, ___, ___o],
+    [TokenType.PRINT]: [___, ___, ___o], // Handled by `printStatement`
     [TokenType.RETURN]: [___, ___, ___o],
     [TokenType.SUPER]: [___, ___, ___o],
     [TokenType.THIS]: [___, ___, ___o],
-    [TokenType.LET]: [___, ___, ___o],
-    [TokenType.WHILE]: [___, ___, ___o],
-    [TokenType.VAR]: [___, ___, ___o],
+    [TokenType.LET]: [___, ___, ___o], // Handled by `varDefStatement`
+    [TokenType.WHILE]: [___, ___, ___o], // Handled by `whileStatement`
+    [TokenType.VAR]: [___, ___, ___o], // Handled by `varDefStatement`
     [TokenType.ERROR]: [___, ___, ___o],
     [TokenType.EMPTY]: [___, ___, ___o],
     [TokenType.END]: [___, ___, ___o],
@@ -2635,6 +2721,119 @@ function syntaxAnalysis(code: string) {
     return lhs;
   };
 
+  /**
+   * Parses a variable definition statement.
+   */
+  const varDefStatement = (type: TokenType.LET | TokenType.VAR) => {
+    const phase = `parsing a variable declaration`;
+    const name = state.next();
+    if (!name.isIdentifier()) {
+      return state.error(
+        `Expected a valid identifier`,
+        phase,
+      );
+    }
+    if (!state.nextIs(TokenType.EQUAL)) {
+      return state.error(
+        `Expected an assignment operator “=” after the identifier`,
+        phase,
+      );
+    }
+    const init = expressionStatement();
+    if (init.isLeft()) {
+      return init;
+    }
+    const value = init.unwrap();
+    return state.statement(
+      varDef(name, value.$expression, type === TokenType.VAR),
+    );
+  };
+
+  /**
+   * Parses a while-loop statement.
+   */
+  const whileStatement = () => {
+    const phase = `parsing a while loop`;
+    const loopCondition = expr();
+    if (loopCondition.isLeft()) {
+      return loopCondition;
+    }
+    if (!state.nextIs(TokenType.LEFT_BRACE)) {
+      return state.error(
+        `Expected a block after the while-loop’s condition`,
+        phase,
+      );
+    }
+    const body = blockStatement();
+    if (body.isLeft()) {
+      return body;
+    }
+    return state.statement(whileStmt(
+      loopCondition.unwrap(),
+      body.unwrap(),
+    ));
+  };
+
+  /**
+   * Parses a conditional statement.
+   */
+  const conditionalStatement = () => {
+    const phase = `parsing a conditional statement`;
+    const c = expr();
+    if (c.isLeft()) {
+      return c;
+    }
+    const condition = c.unwrap();
+    if (!state.nextIs(TokenType.LEFT_BRACE)) {
+      return state.error(
+        `Expected a “{” to begin the consequent block`,
+        phase,
+      );
+    }
+    const consequent = blockStatement();
+    if (consequent.isLeft()) {
+      return consequent;
+    }
+    const thenBranch = consequent.unwrap();
+    let elseBranch: Statement = exprStmt(nil());
+    if (state.nextIs(TokenType.ELSE)) {
+      const _else = statement();
+      if (_else.isLeft()) {
+        return _else;
+      }
+      elseBranch = _else.unwrap();
+    }
+    return state.statement(conditionalStmt(
+      condition,
+      thenBranch,
+      elseBranch,
+    ));
+  };
+
+  /**
+   * Parses a block statement.
+   */
+  const blockStatement = () => {
+    const statements: Statement[] = [];
+    while (!state.atEnd() && !state.check(TokenType.RIGHT_BRACE)) {
+      const stmt = statement();
+      if (stmt.isLeft()) {
+        return stmt;
+      }
+      statements.push(stmt.unwrap());
+    }
+    if (!state.nextIs(TokenType.RIGHT_BRACE)) {
+      return state.error(
+        `Expected a “}” to close the block`,
+        `parsing a block statement`,
+      );
+    }
+    return state.statement(blockStmt(statements));
+  };
+
+  /**
+   * Parses a print statement.
+   */
   const printStatement = () => {
     const keyword = state.$current;
     const arg = expressionStatement();
@@ -2644,7 +2843,7 @@ function syntaxAnalysis(code: string) {
   /**
    * Parses an expression statement.
    */
-  const expressionStatement = () => {
+  const expressionStatement = (): Either<Err, ExprStmt> => {
     const out = expr();
     if (out.isLeft()) {
       return out;
@@ -2662,8 +2861,18 @@ function syntaxAnalysis(code: string) {
   /**
    * Parses a statement.
    */
-  const statement = () => {
-    if (state.nextIs(TokenType.PRINT)) {
+  const statement = (): Either<Err, Statement> => {
+    if (state.nextIs(TokenType.IF)) {
+      return conditionalStatement();
+    } else if (state.nextIs(TokenType.WHILE)) {
+      return whileStatement();
+    } else if (state.nextIs(TokenType.LEFT_BRACE)) {
+      return blockStatement();
+    } else if (state.nextIs(TokenType.LET)) {
+      return varDefStatement(TokenType.LET);
+    } else if (state.nextIs(TokenType.VAR)) {
+      return varDefStatement(TokenType.VAR);
+    } else if (state.nextIs(TokenType.PRINT)) {
       return printStatement();
     } else {
       return expressionStatement();
@@ -2693,7 +2902,9 @@ function syntaxAnalysis(code: string) {
 }
 
 const test = syntaxAnalysis(`
-print 5
+while x < 5 {
+  y = 2;
+}
 `);
 const out = test.statements();
 print(treed(out));

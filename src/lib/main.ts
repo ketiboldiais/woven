@@ -345,8 +345,6 @@ enum TokenType {
   THIS,
   LET,
   WHILE,
-  NAN,
-  INF,
   NUMERIC_CONSTANT,
   VAR,
 
@@ -501,6 +499,17 @@ class Token<L extends Primitive = any> {
   isScientificNumber(): this is Token<Scinum> {
     return (
       this.$type === TokenType.SCIENTIFIC_NUMBER
+    );
+  }
+
+  /**
+   * Returns true, and asserts,
+   * if this token is a numeric
+   * constant.
+   */
+  isNumericConstant(): this is Token<number> {
+    return (
+      this.$type === TokenType.NUMERIC_CONSTANT
     );
   }
 
@@ -963,9 +972,9 @@ export function lexicalAnalysis(code: string) {
       case "true":
         return newToken(TokenType.TRUE).literal(true);
       case "NAN":
-        return newToken(TokenType.NAN).literal(NaN);
+        return newToken(TokenType.NUMERIC_CONSTANT).literal(NaN);
       case "Inf":
-        return newToken(TokenType.INF).literal(Infinity);
+        return newToken(TokenType.NUMERIC_CONSTANT).literal(Infinity);
       case "pi":
         return newToken(TokenType.NUMERIC_CONSTANT).literal(PI);
       case "e":
@@ -1502,8 +1511,7 @@ enum NodeKind {
   nil,
   string,
   boolean,
-  NaN,
-  Inf,
+  numeric_constant,
   assignExpr,
   binaryExpr,
   callExpr,
@@ -1516,6 +1524,7 @@ enum NodeKind {
   exprStmt,
   fnDefStmt,
   condStmt,
+  printStmt,
 }
 
 interface Visitor<T> {
@@ -1523,8 +1532,7 @@ interface Visitor<T> {
   floatExpr(expr: FloatExpr): T;
   fracExpr(expr: FracExpr): T;
   scinumExpr(expr: ScinumExpr): T;
-  NaNExpr(expr: NaNExpr): T;
-  infExpr(expr: InfExpr): T;
+  numConstExpr(expr: NumericConstExpr): T;
   nilExpr(expr: NilExpr): T;
   stringExpr(expr: StringExpr): T;
   booleanExpr(expr: BooleanExpr): T;
@@ -1536,6 +1544,7 @@ interface Visitor<T> {
   groupExpr(expr: GroupExpr): T;
   unaryExpr(expr: UnaryExpr): T;
   variable(expr: Variable): T;
+  printStmt(stmt: PrintStmt): T;
   block(stmt: BlockStmt): T;
   expression(stmt: ExprStmt): T;
   fnDef(stmt: FnDefStmt): T;
@@ -1602,44 +1611,29 @@ const int = (value: number) => (
 );
 
 /**
- * A class corresponding to a NaN literal expression.
+ * A class corresponding to a numeric constant expression.
  */
-class NaNExpr extends Expr {
-  $value: number = NaN;
-  constructor() {
+class NumericConstExpr extends Expr {
+  $sym: string;
+  $value: number;
+  constructor(sym: string, value: number) {
     super();
+    this.$sym = sym;
+    this.$value = value;
   }
   accept<T>(Visitor: Visitor<T>): T {
-    return Visitor.NaNExpr(this);
+    return Visitor.numConstExpr(this);
   }
   kind(): NodeKind {
-    return NodeKind.NaN;
+    return NodeKind.numeric_constant;
   }
 }
 
 /** Returns a new NaN literal. */
-const NAN = () => (new NaNExpr());
-
-/**
- * A class corresponding to an Inf literal expression.
- */
-class InfExpr extends Expr {
-  $value: number = Infinity;
-  constructor() {
-    super();
-  }
-  accept<T>(Visitor: Visitor<T>): T {
-    return Visitor.infExpr(this);
-  }
-  kind(): NodeKind {
-    return NodeKind.Inf;
-  }
-}
-
-/**
- * Returns a new Inf literal experssion.
- */
-const INF = () => (new InfExpr());
+const numConst = (
+  sym: string,
+  value: number,
+) => (new NumericConstExpr(sym, value));
 
 /**
  * A class corresponding to an float literal expression.
@@ -1982,6 +1976,32 @@ abstract class Statement extends ASTNode {
 }
 
 /**
+ * A class corresponding to a print statement.
+ */
+class PrintStmt extends Statement {
+  $expr: Expr;
+  $keyword: Token;
+  constructor(expr: Expr, keyword: Token) {
+    super();
+    this.$expr = expr;
+    this.$keyword = keyword;
+  }
+  accept<T>(visitor: Visitor<T>): T {
+    return visitor.printStmt(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.printStmt;
+  }
+}
+
+/**
+ * Returns a new print statement.
+ */
+const printStmt = (expr: Expr, keyword: Token) => (
+  new PrintStmt(expr, keyword)
+);
+
+/**
  * A class corresponding to a block statement.
  */
 class BlockStmt extends Statement {
@@ -2315,17 +2335,17 @@ function syntaxAnalysis(code: string) {
   };
 
   /**
-   * Parses an Inf literal.
+   * Parses a numeric constant literal.
    */
-  const infExpr: ParseRule<Expr> = () => {
-    return state.expr(INF());
-  };
-
-  /**
-   * Parses a NaN literal.
-   */
-  const nanExpr: ParseRule<Expr> = () => {
-    return state.expr(NAN());
+  const numericConstant: ParseRule<Expr> = (token: Token) => {
+    if (token.isNumericConstant()) {
+      return state.expr(numConst(token.$lexeme, token.$literal));
+    } else {
+      return state.error(
+        `Expected a numeric constant, but got “${token.$lexeme}”`,
+        `parsing a numeric constant`,
+      );
+    }
   };
 
   /**
@@ -2498,6 +2518,7 @@ function syntaxAnalysis(code: string) {
     [TokenType.TRUE]: [boolean, ___, BP.LITERAL],
     [TokenType.FALSE]: [boolean, ___, BP.LITERAL],
     [TokenType.IDENTIFIER]: [identifier, ___, BP.LITERAL],
+    [TokenType.NUMERIC_CONSTANT]: [numericConstant, ___, BP.LITERAL],
 
     // Algebraic Operators
     [TokenType.PLUS]: [___, infix, BP.SUM],
@@ -2558,9 +2579,6 @@ function syntaxAnalysis(code: string) {
     [TokenType.THIS]: [___, ___, ___o],
     [TokenType.LET]: [___, ___, ___o],
     [TokenType.WHILE]: [___, ___, ___o],
-    [TokenType.NAN]: [___, ___, ___o],
-    [TokenType.INF]: [___, ___, ___o],
-    [TokenType.NUMERIC_CONSTANT]: [___, ___, ___o],
     [TokenType.VAR]: [___, ___, ___o],
     [TokenType.ERROR]: [___, ___, ___o],
     [TokenType.EMPTY]: [___, ___, ___o],
@@ -2616,7 +2634,17 @@ function syntaxAnalysis(code: string) {
     }
     return lhs;
   };
-  const expression = () => {
+
+  const printStatement = () => {
+    const keyword = state.$current;
+    const arg = expressionStatement();
+    return arg.map((expr) => printStmt(expr, keyword));
+  };
+
+  /**
+   * Parses an expression statement.
+   */
+  const expressionStatement = () => {
     const out = expr();
     if (out.isLeft()) {
       return out;
@@ -2630,9 +2658,18 @@ function syntaxAnalysis(code: string) {
       `expression statement`,
     );
   };
+
+  /**
+   * Parses a statement.
+   */
   const statement = () => {
-    return expression();
+    if (state.nextIs(TokenType.PRINT)) {
+      return printStatement();
+    } else {
+      return expressionStatement();
+    }
   };
+
   return {
     /**
      * Returns the statements parsed
@@ -2656,7 +2693,7 @@ function syntaxAnalysis(code: string) {
 }
 
 const test = syntaxAnalysis(`
-4! + 8
+print 5
 `);
 const out = test.statements();
 print(treed(out));

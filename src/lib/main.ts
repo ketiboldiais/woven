@@ -1508,6 +1508,9 @@ interface Visitor<T> {
   nilExpr(expr: NilExpr): T;
   stringExpr(expr: StringExpr): T;
   booleanExpr(expr: BooleanExpr): T;
+  indexingExpr(expr: IndexingExpr): T;
+  vectorExpr(expr: VectorExpr): T;
+  matrixExpr(expr: MatrixExpr): T;
   assignExpr(expr: AssignExpr): T;
   binaryExpr(expr: BinaryExpr): T;
   logicalBinaryExpr(expr: LogicalBinaryExpr): T;
@@ -1515,7 +1518,7 @@ interface Visitor<T> {
   callExpr(expr: CallExpr): T;
   groupExpr(expr: GroupExpr): T;
   unaryExpr(expr: UnaryExpr): T;
-  variable(expr: Variable): T;
+  variableExpr(expr: VariableExpr): T;
   printStmt(stmt: PrintStmt): T;
   varDefStmt(stmt: VarDefStmt): T;
   whileStmt(stmt: WhileStmt): T;
@@ -1546,6 +1549,9 @@ enum NodeKind {
   groupExpr,
   logicalBinaryExpr,
   unaryExpr,
+  indexingExpr,
+  vectorExpr,
+  matrixExpr,
   variableExpr,
   blockStmt,
   exprStmt,
@@ -1716,9 +1722,9 @@ const float = (value: number) => (
 
 /** A class corresponding to an Assignment node. */
 class AssignExpr extends Expr {
-  $name: Variable;
+  $name: VariableExpr;
   $value: Expr;
-  constructor(name: Variable, value: Expr) {
+  constructor(name: VariableExpr, value: Expr) {
     super();
     this.$name = name;
     this.$value = value;
@@ -1734,7 +1740,7 @@ class AssignExpr extends Expr {
 /**
  * Returns a new assignment node.
  */
-const assign = (name: Variable, value: Expr) => (
+const assign = (name: VariableExpr, value: Expr) => (
   new AssignExpr(name, value)
 );
 
@@ -1778,6 +1784,94 @@ const bool = (value: boolean) => (
   new BooleanExpr(value)
 );
 
+/**
+ * A node corresponding to an
+ * indexing expression.
+ */
+class IndexingExpr extends Expr {
+  $list: Expr;
+  $index: Expr;
+  constructor(list: Expr, index: Expr) {
+    super();
+    this.$list = list;
+    this.$index = index;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.indexingExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.indexingExpr;
+  }
+}
+
+/**
+ * Returns a new indexing expression node.
+ */
+const indexingExpr = (list: Expr, index: Expr) => (
+  new IndexingExpr(list, index)
+);
+
+/**
+ * A node corresponding to a vector
+ * expression.
+ */
+class VectorExpr extends Expr {
+  $elements: Expr[];
+  constructor(elements: Expr[]) {
+    super();
+    this.$elements = elements;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.vectorExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.vectorExpr;
+  }
+}
+
+/**
+ * Returns a new vector expression node.
+ */
+const vectorExpr = (elements: Expr[]) => (
+  new VectorExpr(elements)
+);
+
+/**
+ * Returns true, and asserts,
+ * if the given node is a vector expression.
+ */
+const isVectorExpr = (node: ASTNode): node is VectorExpr => (
+  node.kind() === NodeKind.vectorExpr
+);
+
+/**
+ * A node corresponding to a matrix expression.
+ */
+class MatrixExpr extends Expr {
+  $vectors: VectorExpr[];
+  $rows: number;
+  $columns: number;
+  constructor(vectors: VectorExpr[], rows: number, columns: number) {
+    super();
+    this.$vectors = vectors;
+    this.$rows = rows;
+    this.$columns = columns;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.matrixExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.matrixExpr;
+  }
+}
+
+/**
+ * Returns a new matrix expression node.
+ */
+const matrixExpr = (vectors: VectorExpr[], rows: number, columns: number) => (
+  new MatrixExpr(vectors, rows, columns)
+);
+
 /** A class corresponding to a binary expression. */
 class BinaryExpr extends Expr {
   /** The left operand of this binary expression. */
@@ -1801,6 +1895,13 @@ class BinaryExpr extends Expr {
     return NodeKind.binaryExpr;
   }
 }
+
+/**
+ * Returns a new binary expression node.
+ */
+const binex = (left: Expr, op: Token, right: Expr) => (
+  new BinaryExpr(left, op, right)
+);
 
 /**
  * A class corresponding to a logical binary expression.
@@ -1827,6 +1928,13 @@ class LogicalBinaryExpr extends Expr {
     return NodeKind.logicalBinaryExpr;
   }
 }
+
+/**
+ * Returns a new logical binary expression node.
+ */
+const logicalBinex = (left: Expr, op: Token, right: Expr) => (
+  new LogicalBinaryExpr(left, op, right)
+);
 
 /**
  * A class corresponding to a relation expression.
@@ -1892,20 +2000,6 @@ const unaryExpr = (op: Token, arg: Expr) => (
 );
 
 /**
- * Returns a new logical binary expression node.
- */
-const logicalBinex = (left: Expr, op: Token, right: Expr) => (
-  new LogicalBinaryExpr(left, op, right)
-);
-
-/**
- * Returns a new binary expression node.
- */
-const binex = (left: Expr, op: Token, right: Expr) => (
-  new BinaryExpr(left, op, right)
-);
-
-/**
  * A class corresponding to a function call expression.
  */
 class CallExpr extends Expr {
@@ -1960,28 +2054,28 @@ const groupExpr = (innerExpression: Expr) => (
 /**
  * A class corresponding to a variable node.
  */
-class Variable extends Expr {
+class VariableExpr extends Expr {
   $name: Token;
   constructor(name: Token) {
     super();
     this.$name = name;
   }
   accept<T>(Visitor: Visitor<T>): T {
-    return Visitor.variable(this);
+    return Visitor.variableExpr(this);
   }
   kind(): NodeKind {
     return NodeKind.variableExpr;
   }
 }
 const variable = (name: Token) => (
-  new Variable(name)
+  new VariableExpr(name)
 );
 /**
  * Returns true, and asserts, if the
  * given node is a variable expression
  * (i.e., an identifier) node.
  */
-const isVariable = (node: ASTNode): node is Variable => (
+const isVariable = (node: ASTNode): node is VariableExpr => (
   node.kind() === NodeKind.variableExpr
 );
 
@@ -2603,6 +2697,9 @@ function syntaxAnalysis(code: string) {
     }
   };
 
+  /**
+   * Parses a list of comma-separated expressions.
+   */
   const commaSeparatedExprs = () => {
     const exprs: Expr[] = [];
     do {
@@ -2637,6 +2734,49 @@ function syntaxAnalysis(code: string) {
     }
     const out = callExpr(callee, args, op);
     return state.expr(out);
+  };
+
+  /**
+   * Parses a vector or matrix expression.
+   */
+  const vectorExpression: ParseRule<Expr> = () => {
+    const elements: Expr[] = [];
+    const vectors: VectorExpr[] = [];
+    const phase = `parsing a vector expression`;
+    let rows = 0;
+    let columns = 0;
+    if (!state.check(TokenType.RIGHT_BRACKET)) {
+      do {
+        const elem = expr();
+        if (elem.isLeft()) {
+          return elem;
+        }
+        const element = elem.unwrap();
+        if (isVectorExpr(element)) {
+          rows++;
+          columns = element.$elements.length;
+          vectors.push(element);
+        } else {
+          elements.push(element);
+        }
+      } while (state.nextIs(TokenType.COMMA) && !state.atEnd());
+    }
+    if (!state.nextIs(TokenType.RIGHT_BRACKET)) {
+      return state.error(
+        `Expected a “]” to close the vector`,
+        phase,
+      );
+    }
+    if (vectors.length !== 0) {
+      if (vectors.length !== columns) {
+        return state.error(
+          `Encountered a jagged matrix. Jagged matrics are not permitted.`,
+          phase,
+        );
+      }
+      return state.expr(matrixExpr(vectors, rows, columns));
+    }
+    return state.expr(vectorExpr(elements));
   };
 
   /**
@@ -2714,9 +2854,9 @@ function syntaxAnalysis(code: string) {
     [TokenType.RIGHT_PAREN]: [___, ___, ___o],
 
     // Not handled by the Pratt parsing function (`expr`).
-    [TokenType.LEFT_BRACE]: [___, ___, ___o],
-    [TokenType.RIGHT_BRACE]: [___, ___, ___o],
-    [TokenType.LEFT_BRACKET]: [___, ___, ___o],
+    [TokenType.LEFT_BRACE]: [___, ___, ___o], // Handled by `blockStatement`
+    [TokenType.RIGHT_BRACE]: [___, ___, ___o], // Handled by statement parsers
+    [TokenType.LEFT_BRACKET]: [vectorExpression, ___, BP.CALL],
     [TokenType.RIGHT_BRACKET]: [___, ___, ___o],
     [TokenType.COMMA]: [___, ___, ___o],
     [TokenType.DOT]: [___, ___, ___o],
@@ -2731,7 +2871,7 @@ function syntaxAnalysis(code: string) {
     [TokenType.IF]: [___, ___, ___o], // Handled by `ifStatement`
     [TokenType.ELSE]: [___, ___, ___o], // Handled by `ifStatement`
     [TokenType.FOR]: [___, ___, ___o], // Handled by `forLoopStatement`
-    [TokenType.FN]: [___, ___, ___o],
+    [TokenType.FN]: [___, ___, ___o], // Handled by `fnDefStatement`
     [TokenType.PRINT]: [___, ___, ___o], // Handled by `printStatement`
     [TokenType.RETURN]: [___, ___, ___o], // Handled by `returnStatement`
     [TokenType.SUPER]: [___, ___, ___o],
@@ -2819,6 +2959,68 @@ function syntaxAnalysis(code: string) {
     const value = init.unwrap();
     return state.statement(
       varDef(name, value.$expression, type === TokenType.VAR),
+    );
+  };
+
+  /**
+   * Parses a function definition statement.
+   */
+  const fnDefStatement = () => {
+    const phase = `parsing a function declaration`;
+    const name = state.next();
+    if (!name.isIdentifier()) {
+      return state.error(
+        `Expected a valid identifier for the function’s name`,
+        phase,
+      );
+    }
+    if (!state.nextIs(TokenType.LEFT_PAREN)) {
+      return state.error(
+        `Expected a “(” to begin the parameters`,
+        phase,
+      );
+    }
+    const params: Token<string>[] = [];
+    if (!state.$peek.is(TokenType.RIGHT_PAREN)) {
+      do {
+        const expression = state.next();
+        if (!expression.isIdentifier()) {
+          return state.error(
+            `Expected a valid identifier as a parameter`,
+            phase,
+          );
+        }
+        params.push(expression);
+      } while (state.nextIs(TokenType.COMMA));
+    }
+    if (!state.nextIs(TokenType.RIGHT_PAREN)) {
+      return state.error(
+        `Expected a “)” to close the parameters`,
+        phase,
+      );
+    }
+    if (state.nextIs(TokenType.EQUAL)) {
+      const body = expressionStatement();
+      if (body.isLeft()) {
+        return body;
+      }
+      return state.statement(
+        fnDefStmt(name, params, [body.unwrap()]),
+      );
+    }
+    if (!state.nextIs(TokenType.LEFT_BRACE)) {
+      return state.error(
+        `Expected a “{” to open the function’s body`,
+        phase,
+      );
+    }
+    const body = blockStatement();
+    return body.chain((b) =>
+      state.statement(fnDefStmt(
+        name,
+        params,
+        b.$statements,
+      ))
     );
   };
 
@@ -3033,6 +3235,8 @@ function syntaxAnalysis(code: string) {
   const statement = (): Either<Err, Statement> => {
     if (state.nextIs(TokenType.IF)) {
       return conditionalStatement();
+    } else if (state.nextIs(TokenType.FN)) {
+      return fnDefStatement();
     } else if (state.nextIs(TokenType.WHILE)) {
       return whileStatement();
     } else if (state.nextIs(TokenType.FOR)) {
@@ -3075,7 +3279,7 @@ function syntaxAnalysis(code: string) {
 }
 
 const test = syntaxAnalysis(`
-let x = f(2);
+fn f(x) = x^2;
 `);
 const out = test.statements();
 print(treed(out));

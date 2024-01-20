@@ -3408,7 +3408,63 @@ function syntaxAnalysis(code: string) {
   };
 }
 
-const truthValue = (value: Primitive) => {
+type RuntimeValue = Primitive;
+
+class Environment<T> {
+  $values: Map<string, T> = new Map<string, T>();
+  /**
+   * Creates a new record in this environment
+   * mapping the given name to given value.
+   */
+  define(name: string, value: T) {
+    this.$values.set(name, value);
+    return value;
+  }
+  /**
+   * Assigns the given value to the given name.
+   * A runtime error is thrown if no such name
+   * exists.
+   */
+  assign(name: Token, value: T): T {
+    if (this.$values.has(name.$lexeme)) {
+      this.$values.set(name.$lexeme, value);
+      return value;
+    }
+    throw runtimeError(
+      `Assigning to an undefined variable “${name.$lexeme}”`,
+      `resolving an assignment`,
+      name.$line,
+      name.$column,
+    );
+  }
+  /**
+   * Returns the value bound to the given
+   * name. A runtime error is thrown if
+   * no such name exists.
+   */
+  get(name: Token) {
+    if (this.$values.has(name.$lexeme)) {
+      return this.$values.get(name.$lexeme)!;
+    }
+    throw runtimeError(
+      `Undefined variable name “${name.$lexeme}”`,
+      `resolving a variable name`,
+      name.$line,
+      name.$column,
+    );
+  }
+}
+
+/**
+ * Returns a new environment.
+ */
+const env = <T>() => (new Environment<T>());
+
+/**
+ * Returns the assumed truth value
+ * for the given value.
+ */
+const truthValue = (value: RuntimeValue) => {
   if (typeof value === "boolean") {
     return value;
   } else if (typeof value === "number") {
@@ -3427,12 +3483,14 @@ const truthValue = (value: Primitive) => {
 /**
  * An object that executes a given syntax tree.
  */
-class Interpreter implements Visitor<Primitive> {
+class Interpreter implements Visitor<RuntimeValue> {
+  $env: Environment<RuntimeValue>;
   constructor() {
+    this.$env = env();
   }
-  interpret(statements: Statement[]): Either<Err, Primitive> {
+  interpret(statements: Statement[]): Either<Err, RuntimeValue> {
     try {
-      let result: Primitive = null;
+      let result: RuntimeValue = null;
       const L = statements.length;
       for (let i = 0; i < L; i++) {
         result = this.evaluate(statements[i]);
@@ -3445,43 +3503,43 @@ class Interpreter implements Visitor<Primitive> {
   evaluate(node: ASTNode) {
     return node.accept(this);
   }
-  intExpr(expr: IntExpr): Primitive {
+  intExpr(expr: IntExpr): RuntimeValue {
     return expr.$value;
   }
-  floatExpr(expr: FloatExpr): Primitive {
+  floatExpr(expr: FloatExpr): RuntimeValue {
     return expr.$value;
   }
-  fracExpr(expr: FracExpr): Primitive {
+  fracExpr(expr: FracExpr): RuntimeValue {
     return expr.$value;
   }
-  scinumExpr(expr: ScinumExpr): Primitive {
+  scinumExpr(expr: ScinumExpr): RuntimeValue {
     return expr.$value;
   }
-  numConstExpr(expr: NumericConstExpr): Primitive {
+  numConstExpr(expr: NumericConstExpr): RuntimeValue {
     return expr.$value;
   }
-  nilExpr(expr: NilExpr): Primitive {
+  nilExpr(expr: NilExpr): RuntimeValue {
     return expr.$value;
   }
-  stringExpr(expr: StringExpr): Primitive {
+  stringExpr(expr: StringExpr): RuntimeValue {
     return expr.$value;
   }
-  booleanExpr(expr: BooleanExpr): Primitive {
+  booleanExpr(expr: BooleanExpr): RuntimeValue {
     return expr.$value;
   }
-  indexingExpr(expr: IndexingExpr): Primitive {
+  indexingExpr(expr: IndexingExpr): RuntimeValue {
     throw new Error("Method not implemented.");
   }
-  vectorExpr(expr: VectorExpr): Primitive {
+  vectorExpr(expr: VectorExpr): RuntimeValue {
     throw new Error("Method not implemented.");
   }
-  matrixExpr(expr: MatrixExpr): Primitive {
+  matrixExpr(expr: MatrixExpr): RuntimeValue {
     throw new Error("Method not implemented.");
   }
-  assignExpr(expr: AssignExpr): Primitive {
+  assignExpr(expr: AssignExpr): RuntimeValue {
     throw new Error("Method not implemented.");
   }
-  binaryExpr(expr: BinaryExpr): Primitive {
+  binaryExpr(expr: BinaryExpr): RuntimeValue {
     let left = this.evaluate(expr.$left);
     let right = this.evaluate(expr.$right);
     if (typeof left === "number" && typeof right === "number") {
@@ -3508,7 +3566,7 @@ class Interpreter implements Visitor<Primitive> {
     }
     throw new Error("Method not implemented.");
   }
-  logicalBinaryExpr(expr: LogicalBinaryExpr): Primitive {
+  logicalBinaryExpr(expr: LogicalBinaryExpr): RuntimeValue {
     let left = truthValue(this.evaluate(expr.$left));
     let right = truthValue(this.evaluate(expr.$right));
     switch (expr.$op.$type) {
@@ -3532,7 +3590,7 @@ class Interpreter implements Visitor<Primitive> {
       expr.$op.$column,
     );
   }
-  relationExpr(expr: RelationExpr): Primitive {
+  relationExpr(expr: RelationExpr): RuntimeValue {
     let left = this.evaluate(expr.$left);
     let right = this.evaluate(expr.$right);
     if (typeof left === "number" && typeof right === "number") {
@@ -3553,13 +3611,13 @@ class Interpreter implements Visitor<Primitive> {
     }
     throw new Error("Method not implemented.");
   }
-  callExpr(expr: CallExpr): Primitive {
+  callExpr(expr: CallExpr): RuntimeValue {
     throw new Error("Method not implemented.");
   }
-  groupExpr(expr: GroupExpr): Primitive {
+  groupExpr(expr: GroupExpr): RuntimeValue {
     return this.evaluate(expr.$inner);
   }
-  unaryExpr(expr: UnaryExpr): Primitive {
+  unaryExpr(expr: UnaryExpr): RuntimeValue {
     const arg = this.evaluate(expr.$arg);
     if (expr.$op.is(TokenType.NOT)) {
       return !truthValue(arg);
@@ -3578,33 +3636,36 @@ class Interpreter implements Visitor<Primitive> {
     }
     throw new Error("Method not implemented.");
   }
-  variableExpr(expr: VariableExpr): Primitive {
-    throw new Error("Method not implemented.");
+  variableExpr(expr: VariableExpr): RuntimeValue {
+    const out = this.$env.get(expr.$name);
+    return out;
   }
-  printStmt(stmt: PrintStmt): Primitive {
+  printStmt(stmt: PrintStmt): RuntimeValue {
     const value = this.evaluate(stmt.$expr);
     print(value);
     return null;
   }
-  varDefStmt(stmt: VarDefStmt): Primitive {
+  varDefStmt(stmt: VarDefStmt): RuntimeValue {
+    const value = this.evaluate(stmt.$value);
+    this.$env.define(stmt.$name.$lexeme, value);
+    return value;
+  }
+  whileStmt(stmt: WhileStmt): RuntimeValue {
     throw new Error("Method not implemented.");
   }
-  whileStmt(stmt: WhileStmt): Primitive {
+  blockStmt(stmt: BlockStmt): RuntimeValue {
     throw new Error("Method not implemented.");
   }
-  blockStmt(stmt: BlockStmt): Primitive {
+  returnStmt(stmt: ReturnStmt): RuntimeValue {
     throw new Error("Method not implemented.");
   }
-  returnStmt(stmt: ReturnStmt): Primitive {
-    throw new Error("Method not implemented.");
-  }
-  expressionStmt(stmt: ExprStmt): Primitive {
+  expressionStmt(stmt: ExprStmt): RuntimeValue {
     return this.evaluate(stmt.$expression);
   }
-  fnDefStmt(stmt: FnDefStmt): Primitive {
+  fnDefStmt(stmt: FnDefStmt): RuntimeValue {
     throw new Error("Method not implemented.");
   }
-  conditionalStmt(stmt: ConditionalStmt): Primitive {
+  conditionalStmt(stmt: ConditionalStmt): RuntimeValue {
     throw new Error("Method not implemented.");
   }
 }

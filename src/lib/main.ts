@@ -1566,6 +1566,7 @@ interface Visitor<T> {
   stringExpr(expr: StringExpr): T;
   booleanExpr(expr: BooleanExpr): T;
   indexingExpr(expr: IndexingExpr): T;
+  tupleExpr(expr: TupleExpr): T;
   vectorExpr(expr: VectorExpr): T;
   matrixExpr(expr: MatrixExpr): T;
   assignExpr(expr: AssignExpr): T;
@@ -1607,6 +1608,7 @@ enum NodeKind {
   logicalBinaryExpr,
   unaryExpr,
   indexingExpr,
+  tupleExpr,
   vectorExpr,
   matrixExpr,
   variableExpr,
@@ -1817,6 +1819,7 @@ class StringExpr extends Expr {
     return NodeKind.string;
   }
 }
+
 /**
  * Returns a new string literal expression.
  */
@@ -1837,6 +1840,7 @@ class BooleanExpr extends Expr {
     return NodeKind.boolean;
   }
 }
+
 const bool = (value: boolean) => (
   new BooleanExpr(value)
 );
@@ -1866,6 +1870,33 @@ class IndexingExpr extends Expr {
  */
 const indexingExpr = (list: Expr, index: Expr) => (
   new IndexingExpr(list, index)
+);
+
+/**
+ * A node corresponding to a tuple
+ * expression.
+ */
+class TupleExpr extends Expr {
+  $elements: Expr[];
+  $leftParen: Token;
+  constructor(elements: Expr[], leftParen: Token) {
+    super();
+    this.$elements = elements;
+    this.$leftParen = leftParen;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.tupleExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.tupleExpr;
+  }
+}
+
+/**
+ * Returns a new tuple expression node.
+ */
+const tupleExpr = (elements: Expr[], leftParen: Token) => (
+  new TupleExpr(elements, leftParen)
 );
 
 /**
@@ -2737,10 +2768,27 @@ function syntaxAnalysis(code: string) {
   /**
    * Parses a parenthesized expression.
    */
-  const primary: ParseRule<Expr> = () => {
+  const primary: ParseRule<Expr> = (lparen) => {
     const innerExpr = expr();
     if (innerExpr.isLeft()) {
       return innerExpr;
+    }
+    if (state.nextIs(TokenType.COMMA)) {
+      const elements: Expr[] = [innerExpr.unwrap()];
+      do {
+        const elem = expr();
+        if (elem.isLeft()) {
+          return elem;
+        }
+        elements.push(elem.unwrap());
+      } while (state.nextIs(TokenType.COMMA));
+      if (!state.nextIs(TokenType.RIGHT_PAREN)) {
+        return state.error(
+          `Expected a “)” to close the tuple`,
+          `parsing a tuple`,
+        );
+      }
+      return state.expr(tupleExpr(elements, lparen));
     }
     if (!state.nextIs(TokenType.RIGHT_PAREN)) {
       return state.error(
@@ -3415,7 +3463,7 @@ function syntaxAnalysis(code: string) {
   };
 }
 
-type RuntimeValue = Primitive | Fn | ReturnValue;
+type RuntimeValue = Primitive | Fn | ReturnValue | RuntimeValue[];
 
 class Environment<T> {
   $values: Map<string, T>;
@@ -3594,6 +3642,10 @@ class Resolver<T extends Resolvable = Resolvable> implements Visitor<void> {
   indexingExpr(expr: IndexingExpr): void {
     this.resolve(expr.$list);
     this.resolve(expr.$index);
+    return;
+  }
+  tupleExpr(expr: TupleExpr): void {
+    this.resolveEach(expr.$elements);
     return;
   }
   vectorExpr(expr: VectorExpr): void {
@@ -3878,6 +3930,13 @@ class Interpreter implements Visitor<RuntimeValue> {
   indexingExpr(expr: IndexingExpr): RuntimeValue {
     throw new Error("Method not implemented.");
   }
+  tupleExpr(expr: TupleExpr): RuntimeValue {
+    const elements: RuntimeValue[] = [];
+    for (let i = 0; i < expr.$elements.length; i++) {
+      elements.push(this.evaluate(expr.$elements[i]));
+    }
+    return elements;
+  }
   vectorExpr(expr: VectorExpr): RuntimeValue {
     throw new Error("Method not implemented.");
   }
@@ -4101,8 +4160,7 @@ const compiler = () => {
 };
 
 const j = compiler().execute(`
-fn f(x) = x^2;
-var j = f(3);
-print j;
+let y = (1,2,3);
+print y;
 `);
 // print(j);

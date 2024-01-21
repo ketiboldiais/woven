@@ -2519,7 +2519,7 @@ class ParserState {
   }
 
   /**
-   * Returns true if the current token
+   * Returns true if the upcoming token
    * is of the given type.
    */
   check(type: TokenType) {
@@ -2775,13 +2775,20 @@ function syntaxAnalysis(code: string) {
     }
     if (state.nextIs(TokenType.COMMA)) {
       const elements: Expr[] = [innerExpr.unwrap()];
+      if (state.nextIs(TokenType.RIGHT_PAREN)) {
+        return state.expr(
+          tupleExpr(elements, lparen),
+        );
+      }
       do {
         const elem = expr();
         if (elem.isLeft()) {
           return elem;
         }
         elements.push(elem.unwrap());
-      } while (state.nextIs(TokenType.COMMA));
+      } while (
+        state.nextIs(TokenType.COMMA) && !state.check(TokenType.RIGHT_PAREN)
+      );
       if (!state.nextIs(TokenType.RIGHT_PAREN)) {
         return state.error(
           `Expected a “)” to close the tuple`,
@@ -4160,7 +4167,7 @@ const compiler = () => {
 };
 
 const j = compiler().execute(`
-let y = (1,2,3);
+let y = [1,2,3,4];
 print y;
 `);
 // print(j);

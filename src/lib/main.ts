@@ -281,6 +281,14 @@ const isScinum = (value: any): value is Scinum => (
   value instanceof Scinum
 );
 
+class SET<T> {
+  $elements: Set<T>;
+  constructor(elements: T[]) {
+    this.$elements = new Set(elements);
+  }
+}
+const set = <T>(elements: T[]) => (new SET(elements));
+
 /**
  * An object corresponding to a vector.
  */
@@ -1617,6 +1625,7 @@ interface Visitor<T> {
   indexingExpr(expr: IndexingExpr): T;
   tupleExpr(expr: TupleExpr): T;
   vectorExpr(expr: VectorExpr): T;
+  setExpr(expr: SetExpr): T;
   matrixExpr(expr: MatrixExpr): T;
   assignExpr(expr: AssignExpr): T;
   binaryExpr(expr: BinaryExpr): T;
@@ -1653,6 +1662,7 @@ enum NodeKind {
   binaryExpr,
   callExpr,
   relationExpr,
+  setExpr,
   groupExpr,
   logicalBinaryExpr,
   unaryExpr,
@@ -2021,6 +2031,25 @@ const matrixExpr = (
   leftBracket: Token,
 ) => (
   new MatrixExpr(vectors, rows, columns, leftBracket)
+);
+
+class SetExpr extends Expr {
+  $elements: Expr[];
+  $leftBrace: Token;
+  constructor(elements: Expr[], leftBrace: Token) {
+    super();
+    this.$elements = elements;
+    this.$leftBrace = leftBrace;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.setExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.setExpr;
+  }
+}
+const setExpr = (elements: Expr[], leftBrace: Token) => (
+  new SetExpr(elements, leftBrace)
 );
 
 /** A class corresponding to a binary expression. */
@@ -2814,6 +2843,31 @@ function syntaxAnalysis(code: string) {
     });
   };
 
+  const setExpression: ParseRule<Expr> = (leftBrace) => {
+    const elements: Expr[] = [];
+    const phase = `parsing a vector expression`;
+    if (!state.check(TokenType.RIGHT_BRACKET)) {
+      do {
+        const elem = expr();
+        if (elem.isLeft()) {
+          return elem;
+        }
+        const element = elem.unwrap();
+        elements.push(element);
+      } while (
+        state.nextIs(TokenType.COMMA) &&
+        !state.check(TokenType.RIGHT_BRACE)
+      );
+    }
+    if (!state.nextIs(TokenType.RIGHT_BRACE)) {
+      return state.error(
+        `Expected a “}” to close the set`,
+        phase,
+      );
+    }
+    return state.expr(setExpr(elements, leftBrace));
+  };
+
   /**
    * Parses a parenthesized expression.
    */
@@ -3100,8 +3154,8 @@ function syntaxAnalysis(code: string) {
     [TokenType.LEFT_BRACKET]: [vectorExpression, indexingExpression, BP.CALL],
 
     // Not handled by the Pratt parsing function (`expr`).
-    [TokenType.LEFT_BRACE]: [___, ___, ___o], // Handled by `blockStatement`
-    [TokenType.RIGHT_BRACE]: [___, ___, ___o], // Handled by statement parsers
+    [TokenType.LEFT_BRACE]: [setExpression, ___, BP.LITERAL],
+    [TokenType.RIGHT_BRACE]: [___, ___, ___o], // Handled by block statement
     [TokenType.RIGHT_BRACKET]: [___, ___, ___o],
     [TokenType.COMMA]: [___, ___, ___o], // Handled by various parsers
     [TokenType.DOT]: [___, ___, ___o],
@@ -3532,6 +3586,7 @@ type RuntimeValue =
   | ReturnValue
   | Vector
   | Matrix
+  | SET<RuntimeValue>
   | RuntimeValue[];
 
 class Environment<T> {
@@ -3682,6 +3737,10 @@ class Resolver<T extends Resolvable = Resolvable> implements Visitor<void> {
     }
     const peek = this.peek();
     peek.set(name, true);
+  }
+  setExpr(expr: SetExpr): void {
+    this.resolveEach(expr.$elements);
+    return;
   }
 
   intExpr(expr: IntExpr): void {
@@ -3999,6 +4058,14 @@ class Interpreter implements Visitor<RuntimeValue> {
   indexingExpr(expr: IndexingExpr): RuntimeValue {
     throw new Error("Method not implemented.");
   }
+  setExpr(expr: SetExpr): RuntimeValue {
+    const elements: RuntimeValue[] = [];
+    for (let i = 0; i < expr.$elements.length; i++) {
+      const elem = this.evaluate(expr.$elements[i]);
+      elements.push(elem);
+    }
+    return set(elements);
+  }
   tupleExpr(expr: TupleExpr): RuntimeValue {
     const elements: RuntimeValue[] = [];
     for (let i = 0; i < expr.$elements.length; i++) {
@@ -4255,9 +4322,8 @@ const compiler = () => {
 };
 
 const j = compiler().execute(`
-let y = [
-  [1,2,3,1],
-];
-print y;
+let A = {3,4,5,6};
+let B = {8,9,1,1};
+print B;
 `);
 // print(j);

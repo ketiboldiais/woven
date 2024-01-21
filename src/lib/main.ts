@@ -281,6 +281,23 @@ const isScinum = (value: any): value is Scinum => (
   value instanceof Scinum
 );
 
+/**
+ * An object corresponding to a vector.
+ */
+class Vector {
+  $elements: number[];
+  constructor(elements:number[]) {
+    this.$elements=elements;
+  }
+}
+
+/**
+ * Returns a new vector.
+ */
+const vector = (elements:number[]) => (
+  new Vector(elements)
+)
+
 enum TokenType {
   /** Delimiter token: `(` */
   LEFT_PAREN,

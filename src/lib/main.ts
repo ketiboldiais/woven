@@ -1,5 +1,40 @@
 const print = console.log;
-const { floor } = Math;
+const {
+  abs,
+  acos,
+  acosh,
+  asin,
+  asinh,
+  atan,
+  atan2,
+  atanh,
+  cbrt,
+  clz32,
+  cos,
+  cosh,
+  exp,
+  expm1,
+  floor,
+  fround,
+  hypot,
+  imul,
+  log: ln,
+  log10: log,
+  log1p: ln1p,
+  log2: lg,
+  max,
+  min,
+  pow,
+  random,
+  round,
+  sign: sgn,
+  sin,
+  sinh,
+  sqrt,
+  tan,
+  tanh,
+  trunc,
+} = Math;
 const MAX_INT = Number.MAX_SAFE_INTEGER;
 const MAX_FLOAT = Number.MAX_VALUE;
 
@@ -10,6 +45,10 @@ const percent = (a: number, b: number) => ((a / 100) * b);
 
 const isInteger = (n: any): n is number => (
   typeof n === "number" && (Number.isInteger(n))
+);
+
+const isNumber = (x: any): x is number => (
+  typeof x === "number" && !Number.isNaN(x)
 );
 
 /** Returns the factorial of the given number. */
@@ -1109,10 +1148,6 @@ export function lexicalAnalysis(code: string) {
         return newToken(TokenType.NUMERIC_CONSTANT).literal(NaN);
       case "Inf":
         return newToken(TokenType.NUMERIC_CONSTANT).literal(Infinity);
-      case "pi":
-        return newToken(TokenType.NUMERIC_CONSTANT).literal(PI);
-      case "e":
-        return newToken(TokenType.NUMERIC_CONSTANT).literal(E);
       case "return":
         return newToken(TokenType.RETURN);
       case "while":
@@ -3132,7 +3167,7 @@ function syntaxAnalysis(code: string) {
 
     // Algebraic Infix Operators
     [TokenType.PLUS]: [___, infix, BP.SUM],
-    [TokenType.MINUS]: [___, infix, BP.DIFFERENCE],
+    [TokenType.MINUS]: [unary, infix, BP.DIFFERENCE],
     [TokenType.STAR]: [___, infix, BP.PRODUCT],
     [TokenType.PERCENT]: [___, infix, BP.PRODUCT],
     [TokenType.SLASH]: [___, infix, BP.QUOTIENT],
@@ -3604,7 +3639,7 @@ function syntaxAnalysis(code: string) {
 
 type RuntimeValue =
   | Primitive
-  | Fn
+  | Callable
   | ReturnValue
   | Vector
   | Matrix
@@ -3946,14 +3981,40 @@ const returnValue = (value: RuntimeValue) => (
   new ReturnValue(value)
 );
 
+abstract class Callable {
+  abstract call(interpreter: Interpreter, args: RuntimeValue[]): RuntimeValue;
+}
+
+/**
+ * An object corresponding to a global function.
+ */
+class NativeFn extends Callable {
+  $f: (...args: any[]) => RuntimeValue;
+  constructor(f: (...args: RuntimeValue[]) => RuntimeValue) {
+    super();
+    this.$f = f;
+  }
+  call(interpreter: Interpreter, args: RuntimeValue[]): RuntimeValue {
+    return this.$f(...args);
+  }
+}
+
+/**
+ * Returns a new native/global function.
+ */
+const nativeFn = (f: (...args: any[]) => RuntimeValue) => (
+  new NativeFn(f)
+);
+
 /**
  * An object corresponding to a runtime
  * function.
  */
-class Fn {
+class Fn extends Callable {
   private $closure: Environment<RuntimeValue>;
   private $declaration: FnDefStmt;
   constructor(closure: Environment<RuntimeValue>, declaration: FnDefStmt) {
+    super();
     this.$closure = closure;
     this.$declaration = declaration;
   }
@@ -3984,8 +4045,8 @@ class Fn {
  * Returns true, and asserts,
  * if the given `x` is an Fn object.
  */
-const isFn = (x: any): x is Fn => (
-  x instanceof Fn
+const isCallable = (x: any): x is Fn => (
+  x instanceof Callable
 );
 
 /**
@@ -4016,6 +4077,24 @@ const truthValue = (value: RuntimeValue) => {
 };
 
 /**
+ * An object corresponding to the interpreter’s
+ * settings.
+ */
+type InterpreterSettings = {
+  /**
+   * A record of native functions.
+   * Each key corresponds to the name of
+   * a native function, which maps to a native
+   * function (see {@link NativeFn}).
+   *
+   * Native functions are defined in the global
+   * scope.
+   */
+  nativeFunctions: Record<string, NativeFn>;
+  globalConstants: Record<string, RuntimeValue>;
+};
+
+/**
  * An object that executes a given syntax tree.
  */
 class Interpreter implements Visitor<RuntimeValue> {
@@ -4025,8 +4104,18 @@ class Interpreter implements Visitor<RuntimeValue> {
   resolve(expression: Expr, depth: number) {
     this.$locals.set(expression, depth);
   }
-  constructor() {
+  constructor(settings: InterpreterSettings) {
     this.$global = env(null);
+    for (const property in settings.nativeFunctions) {
+      const functionName = property;
+      const nativeFunction = settings.nativeFunctions[property];
+      this.$global.define(functionName, nativeFunction);
+    }
+    for (const property in settings.globalConstants) {
+      const constant = property;
+      const value = settings.globalConstants[property];
+      this.$global.define(constant, value);
+    }
     this.$env = this.$global;
     this.$locals = new Map();
   }
@@ -4268,7 +4357,7 @@ class Interpreter implements Visitor<RuntimeValue> {
     for (let i = 0; i < expr.$args.length; i++) {
       args.push(this.evaluate(expr.$args[i]));
     }
-    if (isFn(callee)) {
+    if (isCallable(callee)) {
       return callee.call(this, args);
     }
     throw runtimeError(
@@ -4285,6 +4374,17 @@ class Interpreter implements Visitor<RuntimeValue> {
     const arg = this.evaluate(expr.$arg);
     if (expr.$op.is(TokenType.NOT)) {
       return !truthValue(arg);
+    }
+    if (expr.$op.is(TokenType.MINUS)) {
+      if (!isNumber(arg)) {
+        throw runtimeError(
+          `Invalid operand passed to “-”. Numeric negation is only defined on numbers.`,
+          `interpreting a unary negation expression`,
+          expr.$op.$line,
+          expr.$op.$column,
+        );
+      }
+      return -arg;
     }
     if (expr.$op.is(TokenType.BANG)) {
       if (isInteger(arg)) {
@@ -4367,7 +4467,7 @@ class Interpreter implements Visitor<RuntimeValue> {
   }
 }
 
-const compiler = () => {
+const compiler = (settings: InterpreterSettings) => {
   return {
     tokens(code: string) {
       return lexicalAnalysis(code).stream();
@@ -4382,7 +4482,7 @@ const compiler = () => {
         print(erm);
         return erm;
       }
-      const interpreter = new Interpreter();
+      const interpreter = new Interpreter(settings);
       const statements = ast.unwrap();
       const resolved = resolvable(interpreter).resolved(statements);
       if (resolved.isLeft()) {
@@ -4401,9 +4501,49 @@ const compiler = () => {
   };
 };
 
-const j = compiler().execute(`
-let A = [3,4,1,7];
-let a1 = A[2] + A[1];
-print a1;
+const j = compiler({
+  globalConstants: {
+    pi: PI,
+    e: E,
+  },
+  nativeFunctions: {
+    abs: nativeFn(abs),
+    acos: nativeFn(acos),
+    acosh: nativeFn(acosh),
+    asin: nativeFn(asin),
+    asinh: nativeFn(asinh),
+    atan: nativeFn(atan),
+    atan2: nativeFn(atan2),
+    atanh: nativeFn(atanh),
+    cbrt: nativeFn(cbrt),
+    clz32: nativeFn(clz32),
+    cos: nativeFn(cos),
+    cosh: nativeFn(cosh),
+    exp: nativeFn(exp),
+    expm1: nativeFn(expm1),
+    floor: nativeFn(floor),
+    fround: nativeFn(fround),
+    hypot: nativeFn(hypot),
+    imul: nativeFn(imul),
+    ln: nativeFn(ln),
+    log: nativeFn(log),
+    ln1p: nativeFn(ln1p),
+    lg: nativeFn(lg),
+    max: nativeFn(max),
+    min: nativeFn(min),
+    pow: nativeFn(pow),
+    rand: nativeFn(random),
+    round: nativeFn(round),
+    sgn: nativeFn(sgn),
+    sin: nativeFn(sin),
+    sinh: nativeFn(sinh),
+    sqrt: nativeFn(sqrt),
+    tan: nativeFn(tan),
+    tanh: nativeFn(tanh),
+    trunc: nativeFn(trunc),
+  },
+}).execute(`
+let j = 2 * pi;
+print j;
 `);
 // print(j);

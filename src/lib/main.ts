@@ -286,17 +286,49 @@ const isScinum = (value: any): value is Scinum => (
  */
 class Vector {
   $elements: number[];
-  constructor(elements:number[]) {
-    this.$elements=elements;
+  constructor(elements: number[]) {
+    this.$elements = elements;
+  }
+  get length() {
+    return this.$elements.length;
   }
 }
 
 /**
  * Returns a new vector.
  */
-const vector = (elements:number[]) => (
+const vector = (elements: number[]) => (
   new Vector(elements)
-)
+);
+
+/**
+ * Returns true, and asserts,
+ * if the given `x` is a vector.
+ */
+const isVector = (x: any): x is Vector => (
+  x instanceof Vector
+);
+
+/**
+ * An object corresponding to a matrix.
+ */
+class Matrix {
+  $vectors: Vector[];
+  $rows: number;
+  $columns: number;
+  constructor(vectors: Vector[]) {
+    this.$vectors = vectors;
+    this.$rows = vectors.length;
+    this.$columns = vectors[0].length;
+  }
+}
+
+/**
+ * Returns a new matrix.
+ */
+const matrix = (vectors: Vector[]) => (
+  new Matrix(vectors)
+);
 
 enum TokenType {
   /** Delimiter token: `(` */
@@ -2940,6 +2972,7 @@ function syntaxAnalysis(code: string) {
     const phase = `parsing a vector expression`;
     let rows = 0;
     let columns = 0;
+    let didParseMatrix = false;
     if (!state.check(TokenType.RIGHT_BRACKET)) {
       do {
         const elem = expr();
@@ -2949,12 +2982,24 @@ function syntaxAnalysis(code: string) {
         const element = elem.unwrap();
         if (isVectorExpr(element)) {
           rows++;
-          columns = element.$elements.length;
+          if (!didParseMatrix) {
+            columns = element.$elements.length;
+            didParseMatrix = true;
+          }
+          if (columns !== element.$elements.length) {
+            return state.error(
+              `Encountered a jagged matrix. Jagged matrices are not permitted. For nested lists of arbitrary lengths, consider using a tuple.`,
+              phase,
+            );
+          }
           vectors.push(element);
         } else {
           elements.push(element);
         }
-      } while (state.nextIs(TokenType.COMMA) && !state.atEnd());
+      } while (
+        state.nextIs(TokenType.COMMA) &&
+        !state.check(TokenType.RIGHT_BRACKET)
+      );
     }
     if (!state.nextIs(TokenType.RIGHT_BRACKET)) {
       return state.error(
@@ -2963,12 +3008,6 @@ function syntaxAnalysis(code: string) {
       );
     }
     if (vectors.length !== 0) {
-      if (vectors.length !== columns) {
-        return state.error(
-          `Encountered a jagged matrix. Jagged matrics are not permitted.`,
-          phase,
-        );
-      }
       return state.expr(matrixExpr(vectors, rows, columns, leftBracket));
     }
     return state.expr(vectorExpr(elements, leftBracket));
@@ -3487,7 +3526,13 @@ function syntaxAnalysis(code: string) {
   };
 }
 
-type RuntimeValue = Primitive | Fn | ReturnValue | RuntimeValue[];
+type RuntimeValue =
+  | Primitive
+  | Fn
+  | ReturnValue
+  | Vector
+  | Matrix
+  | RuntimeValue[];
 
 class Environment<T> {
   $values: Map<string, T>;
@@ -3962,10 +4007,36 @@ class Interpreter implements Visitor<RuntimeValue> {
     return elements;
   }
   vectorExpr(expr: VectorExpr): RuntimeValue {
-    throw new Error("Method not implemented.");
+    const elements: number[] = [];
+    for (let i = 0; i < expr.$elements.length; i++) {
+      const elem = this.evaluate(expr.$elements[i]);
+      if (typeof elem !== "number") {
+        throw runtimeError(
+          `Vectors may only have number elements`,
+          `interpreting a vector expression`,
+          expr.$leftBracket.$line,
+          expr.$leftBracket.$column,
+        );
+      }
+      elements.push(elem);
+    }
+    return vector(elements);
   }
   matrixExpr(expr: MatrixExpr): RuntimeValue {
-    throw new Error("Method not implemented.");
+    const vectors: Vector[] = [];
+    for (let i = 0; i < expr.$vectors.length; i++) {
+      const v = this.evaluate(expr.$vectors[i]);
+      if (!isVector(v)) {
+        throw runtimeError(
+          `Matrices may only have vector elements`,
+          `interpreting a matrix expression`,
+          expr.$leftBracket.$line,
+          expr.$leftBracket.$column,
+        );
+      }
+      vectors.push(v);
+    }
+    return matrix(vectors);
   }
   assignExpr(expr: AssignExpr): RuntimeValue {
     const value = this.evaluate(expr.$value);
@@ -4184,7 +4255,9 @@ const compiler = () => {
 };
 
 const j = compiler().execute(`
-let y = [1,2,3,4];
+let y = [
+  [1,2,3,1],
+];
 print y;
 `);
 // print(j);

@@ -300,6 +300,9 @@ class Vector {
   get length() {
     return this.$elements.length;
   }
+  at(index: number) {
+    return this.$elements[index - 1];
+  }
 }
 
 /**
@@ -329,6 +332,12 @@ class Matrix {
     this.$rows = vectors.length;
     this.$columns = vectors[0].length;
   }
+  get length() {
+    return this.$rows;
+  }
+  row(index: number) {
+    return this.$vectors[index - 1];
+  }
 }
 
 /**
@@ -336,6 +345,14 @@ class Matrix {
  */
 const matrix = (vectors: Vector[]) => (
   new Matrix(vectors)
+);
+
+/**
+ * Returns true, and asserts,
+ * if x is a matrix.
+ */
+const isMatrix = (x: any): x is Matrix => (
+  x instanceof Matrix
 );
 
 enum TokenType {
@@ -1065,7 +1082,10 @@ export function lexicalAnalysis(code: string) {
    * Scans for an identifier or a keyword.
    */
   const scanWord = () => {
-    while ((isLatinGreek(peek()) || isMathSymbol(peek())) && (!atEnd())) {
+    while (
+      (isLatinGreek(peek()) || isMathSymbol(peek()) || isDigit(peek())) &&
+      (!atEnd())
+    ) {
       tick();
     }
 
@@ -1911,10 +1931,12 @@ const bool = (value: boolean) => (
 class IndexingExpr extends Expr {
   $list: Expr;
   $index: Expr;
-  constructor(list: Expr, index: Expr) {
+  $leftBracket: Token;
+  constructor(list: Expr, index: Expr, leftBracket: Token) {
     super();
     this.$list = list;
     this.$index = index;
+    this.$leftBracket = leftBracket;
   }
   accept<T>(Visitor: Visitor<T>): T {
     return Visitor.indexingExpr(this);
@@ -1927,8 +1949,8 @@ class IndexingExpr extends Expr {
 /**
  * Returns a new indexing expression node.
  */
-const indexingExpr = (list: Expr, index: Expr) => (
-  new IndexingExpr(list, index)
+const indexingExpr = (list: Expr, index: Expr, leftBracket: Token) => (
+  new IndexingExpr(list, index, leftBracket)
 );
 
 /**
@@ -3003,7 +3025,7 @@ function syntaxAnalysis(code: string) {
     return state.expr(out);
   };
 
-  const indexingExpression: ParseRule<Expr> = (op, lhs) => {
+  const indexingExpression: ParseRule<Expr> = (leftBracket, lhs) => {
     const index = expr();
     if (index.isLeft()) {
       return index;
@@ -3014,7 +3036,7 @@ function syntaxAnalysis(code: string) {
         `parsing an indexing expression`,
       );
     }
-    return state.expr(indexingExpr(lhs, index.unwrap()));
+    return state.expr(indexingExpr(lhs, index.unwrap(), leftBracket));
   };
 
   /**
@@ -4056,7 +4078,50 @@ class Interpreter implements Visitor<RuntimeValue> {
     return expr.$value;
   }
   indexingExpr(expr: IndexingExpr): RuntimeValue {
-    throw new Error("Method not implemented.");
+    const index = this.evaluate(expr.$index);
+    if (!isInteger(index)) {
+      throw runtimeError(
+        `Non-integer value passed as an index`,
+        `interpreting an index expression`,
+        expr.$leftBracket.$line,
+        expr.$leftBracket.$column,
+      );
+    }
+    const list = this.evaluate(expr.$list);
+    const is_array = Array.isArray(list);
+    const is_vector = isVector(list);
+    const is_matrix = isMatrix(list);
+    if (is_array || is_vector || is_matrix) {
+      if (index > list.length) {
+        throw runtimeError(
+          `The index passed is out of bounds.`,
+          `interpreting an index expression`,
+          expr.$leftBracket.$line,
+          expr.$leftBracket.$column,
+        );
+      } else if (index === 0) {
+        throw runtimeError(
+          `Invalid index passed. An index of 0 was passed, but indices always start at 1.`,
+          `interpreting an index expression`,
+          expr.$leftBracket.$line,
+          expr.$leftBracket.$column,
+        );
+      }
+    }
+    if (is_array) {
+      return list[index];
+    } else if (is_vector) {
+      return list.at(index);
+    } else if (is_matrix) {
+      return list.row(index);
+    } else {
+      throw runtimeError(
+        `User indexed into a non-sequential value. Only sequences may be indexed into.`,
+        `interpreting an index expression`,
+        expr.$leftBracket.$line,
+        expr.$leftBracket.$column,
+      );
+    }
   }
   setExpr(expr: SetExpr): RuntimeValue {
     const elements: RuntimeValue[] = [];
@@ -4140,7 +4205,12 @@ class Interpreter implements Visitor<RuntimeValue> {
           return floor(left / right);
       }
     }
-    throw new Error("Method not implemented.");
+    throw runtimeError(
+      `Unknown operator: ${expr.$op.$lexeme}`,
+      `interpreting a unary expression`,
+      expr.$op.$line,
+      expr.$op.$column,
+    );
   }
   logicalBinaryExpr(expr: LogicalBinaryExpr): RuntimeValue {
     let left = truthValue(this.evaluate(expr.$left));
@@ -4185,7 +4255,12 @@ class Interpreter implements Visitor<RuntimeValue> {
           return left >= right;
       }
     }
-    throw new Error("Method not implemented.");
+    throw runtimeError(
+      `Unknown operator: ${expr.$op.$lexeme}`,
+      `interpreting a unary expression`,
+      expr.$op.$line,
+      expr.$op.$column,
+    );
   }
   callExpr(expr: CallExpr): RuntimeValue {
     const callee = this.evaluate(expr.$callee);
@@ -4223,7 +4298,12 @@ class Interpreter implements Visitor<RuntimeValue> {
         );
       }
     }
-    throw new Error("Method not implemented.");
+    throw runtimeError(
+      `Unknown operator: ${expr.$op.$lexeme}`,
+      `interpreting a unary expression`,
+      expr.$op.$line,
+      expr.$op.$column,
+    );
   }
   variableExpr(expr: VariableExpr): RuntimeValue {
     return this.lookupVariable(expr.$name, expr);
@@ -4322,8 +4402,8 @@ const compiler = () => {
 };
 
 const j = compiler().execute(`
-let A = {3,4,5,6};
-let B = {8,9,1,1};
-print B;
+let A = [3,4,1,7];
+let a1 = A[2] + A[1];
+print a1;
 `);
 // print(j);

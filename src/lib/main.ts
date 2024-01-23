@@ -394,6 +394,13 @@ const isMatrix = (x: any): x is Matrix => (
   x instanceof Matrix
 );
 
+// § Graphics ==========================================================
+/**
+ * The following section implements Woven’s SVG graphics module.
+ */
+
+// § Start: Compiler ===================================================
+
 enum TokenType {
   /** Delimiter token: `(` */
   LEFT_PAREN,
@@ -3175,6 +3182,7 @@ function syntaxAnalysis(code: string) {
     [TokenType.MOD]: [___, infix, BP.QUOTIENT],
     [TokenType.DIV]: [___, infix, BP.QUOTIENT],
     [TokenType.CARET]: [___, infix, BP.POWER],
+
     // Algebraic Postfix Operator
     [TokenType.BANG]: [___, factorialExpression, BP.POSTFIX],
 
@@ -3192,6 +3200,7 @@ function syntaxAnalysis(code: string) {
     [TokenType.XOR]: [___, logicalInfix, BP.XOR],
     [TokenType.XNOR]: [___, logicalInfix, BP.XNOR],
     [TokenType.NAND]: [___, logicalInfix, BP.NAND],
+
     // Logical Prefix Operator
     [TokenType.NOT]: [unary, ___, BP.NOT],
 
@@ -4106,11 +4115,13 @@ class Interpreter implements Visitor<RuntimeValue> {
   }
   constructor(settings: InterpreterSettings) {
     this.$global = env(null);
+    // define the user’s native functions in the global environment
     for (const property in settings.nativeFunctions) {
       const functionName = property;
       const nativeFunction = settings.nativeFunctions[property];
       this.$global.define(functionName, nativeFunction);
     }
+    // define the user’s global constants in the global environment
     for (const property in settings.globalConstants) {
       const constant = property;
       const value = settings.globalConstants[property];
@@ -4467,7 +4478,61 @@ class Interpreter implements Visitor<RuntimeValue> {
   }
 }
 
-const compiler = (settings: InterpreterSettings) => {
+const compiler = (settings: Partial<InterpreterSettings> = {}) => {
+  const defaultSettings: InterpreterSettings = {
+    globalConstants: {
+      pi: PI,
+      e: E,
+    },
+    nativeFunctions: {
+      abs: nativeFn(abs),
+      acos: nativeFn(acos),
+      acosh: nativeFn(acosh),
+      asin: nativeFn(asin),
+      asinh: nativeFn(asinh),
+      atan: nativeFn(atan),
+      atan2: nativeFn(atan2),
+      atanh: nativeFn(atanh),
+      cbrt: nativeFn(cbrt),
+      clz32: nativeFn(clz32),
+      cos: nativeFn(cos),
+      cosh: nativeFn(cosh),
+      exp: nativeFn(exp),
+      expm1: nativeFn(expm1),
+      floor: nativeFn(floor),
+      fround: nativeFn(fround),
+      hypot: nativeFn(hypot),
+      imul: nativeFn(imul),
+      ln: nativeFn(ln),
+      log: nativeFn(log),
+      ln1p: nativeFn(ln1p),
+      lg: nativeFn(lg),
+      max: nativeFn(max),
+      min: nativeFn(min),
+      pow: nativeFn(pow),
+      rand: nativeFn(random),
+      round: nativeFn(round),
+      sgn: nativeFn(sgn),
+      sin: nativeFn(sin),
+      sinh: nativeFn(sinh),
+      sqrt: nativeFn(sqrt),
+      tan: nativeFn(tan),
+      tanh: nativeFn(tanh),
+      trunc: nativeFn(trunc),
+    },
+  };
+  if (settings.globalConstants) {
+    defaultSettings.globalConstants = {
+      ...defaultSettings.globalConstants,
+      ...settings.globalConstants,
+    };
+  }
+  if (settings.nativeFunctions) {
+    defaultSettings.nativeFunctions = {
+      ...defaultSettings.nativeFunctions,
+      ...settings.nativeFunctions,
+    };
+  }
   return {
     tokens(code: string) {
       return lexicalAnalysis(code).stream();
@@ -4482,7 +4547,7 @@ const compiler = (settings: InterpreterSettings) => {
         print(erm);
         return erm;
       }
-      const interpreter = new Interpreter(settings);
+      const interpreter = new Interpreter(defaultSettings);
       const statements = ast.unwrap();
       const resolved = resolvable(interpreter).resolved(statements);
       if (resolved.isLeft()) {
@@ -4501,49 +4566,13 @@ const compiler = (settings: InterpreterSettings) => {
   };
 };
 
-const j = compiler({
-  globalConstants: {
-    pi: PI,
-    e: E,
-  },
-  nativeFunctions: {
-    abs: nativeFn(abs),
-    acos: nativeFn(acos),
-    acosh: nativeFn(acosh),
-    asin: nativeFn(asin),
-    asinh: nativeFn(asinh),
-    atan: nativeFn(atan),
-    atan2: nativeFn(atan2),
-    atanh: nativeFn(atanh),
-    cbrt: nativeFn(cbrt),
-    clz32: nativeFn(clz32),
-    cos: nativeFn(cos),
-    cosh: nativeFn(cosh),
-    exp: nativeFn(exp),
-    expm1: nativeFn(expm1),
-    floor: nativeFn(floor),
-    fround: nativeFn(fround),
-    hypot: nativeFn(hypot),
-    imul: nativeFn(imul),
-    ln: nativeFn(ln),
-    log: nativeFn(log),
-    ln1p: nativeFn(ln1p),
-    lg: nativeFn(lg),
-    max: nativeFn(max),
-    min: nativeFn(min),
-    pow: nativeFn(pow),
-    rand: nativeFn(random),
-    round: nativeFn(round),
-    sgn: nativeFn(sgn),
-    sin: nativeFn(sin),
-    sinh: nativeFn(sinh),
-    sqrt: nativeFn(sqrt),
-    tan: nativeFn(tan),
-    tanh: nativeFn(tanh),
-    trunc: nativeFn(trunc),
-  },
-}).execute(`
-let j = 2 * pi;
-print j;
+const j = compiler().execute(`
+class Circle {
+  id() {
+    print "circle";
+  }
+}
+let j = Circle();
+j.id();
 `);
 // print(j);

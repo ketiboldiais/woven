@@ -1697,6 +1697,9 @@ interface Visitor<T> {
   groupExpr(expr: GroupExpr): T;
   unaryExpr(expr: UnaryExpr): T;
   variableExpr(expr: VariableExpr): T;
+  getExpr(expr: PropGetExpr): T;
+  propSetExpr(expr: PropSetExpr): T;
+  thisExpr(expr: ThisExpr): T;
   printStmt(stmt: PrintStmt): T;
   varDefStmt(stmt: VarDefStmt): T;
   whileStmt(stmt: WhileStmt): T;
@@ -1704,6 +1707,7 @@ interface Visitor<T> {
   returnStmt(stmt: ReturnStmt): T;
   expressionStmt(stmt: ExprStmt): T;
   fnDefStmt(stmt: FnDefStmt): T;
+  classStmt(stmt: ClassStmt): T;
   conditionalStmt(stmt: ConditionalStmt): T;
 }
 
@@ -1733,6 +1737,9 @@ enum NodeKind {
   vectorExpr,
   matrixExpr,
   variableExpr,
+  getExpr,
+  propSetExpr,
+  thisExpr,
   blockStmt,
   exprStmt,
   fnDefStmt,
@@ -1741,6 +1748,7 @@ enum NodeKind {
   printStmt,
   whileStmt,
   returnStmt,
+  classStmt,
 }
 
 /**
@@ -2323,6 +2331,81 @@ const isVariable = (node: ASTNode): node is VariableExpr => (
   node.kind() === NodeKind.variableExpr
 );
 
+/**
+ * A node corresponding to a get-expression.
+ */
+class PropGetExpr extends Expr {
+  $object: Expr;
+  $name: Token;
+  constructor(object: Expr, name: Token) {
+    super();
+    this.$object = object;
+    this.$name = name;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.getExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.getExpr;
+  }
+}
+
+/**
+ * Returns a new get-expression node.
+ */
+const getExpr = (object: Expr, name: Token) => (
+  new PropGetExpr(object, name)
+);
+
+const isGetExpr = (node: ASTNode): node is PropGetExpr => (
+  node.kind() === NodeKind.getExpr
+);
+
+/**
+ * A node corresponding to a property-set-expression.
+ */
+class PropSetExpr extends Expr {
+  $object: Expr;
+  $name: Token;
+  $value: Expr;
+  constructor(object: Expr, name: Token, value: Expr) {
+    super();
+    this.$object = object;
+    this.$name = name;
+    this.$value = value;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.propSetExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.propSetExpr;
+  }
+}
+
+/**
+ * Returns a new property-set-expression node.
+ */
+const propSetExpr = (object: Expr, name: Token, value: Expr) => (
+  new PropSetExpr(object, name, value)
+);
+
+class ThisExpr extends Expr {
+  $keyword: Token;
+  constructor(keyword: Token) {
+    super();
+    this.$keyword = keyword;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.thisExpr(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.thisExpr;
+  }
+}
+const thisExpr = (keyword: Token) => (
+  new ThisExpr(keyword)
+);
+
 abstract class Statement extends ASTNode {
 }
 
@@ -2547,6 +2630,28 @@ const conditionalStmt = (
   elseBranch: Statement,
 ) => (
   new ConditionalStmt(condition, thenBranch, elseBranch)
+);
+
+/** A class declaration statement node. */
+class ClassStmt extends Statement {
+  $name: Token;
+  $methods: FnDefStmt[];
+  constructor(name: Token, methods: FnDefStmt[]) {
+    super();
+    this.$name = name;
+    this.$methods = methods;
+  }
+  accept<T>(Visitor: Visitor<T>): T {
+    return Visitor.classStmt(this);
+  }
+  kind(): NodeKind {
+    return NodeKind.classStmt;
+  }
+}
+
+/** Returns a new class declaration statement node. */
+const classStmt = (name: Token, methods: FnDefStmt[]) => (
+  new ClassStmt(name, methods)
 );
 
 enum BP {
@@ -2932,6 +3037,40 @@ function syntaxAnalysis(code: string) {
     return state.expr(setExpr(elements, leftBrace));
   };
 
+  const getExpression: ParseRule<Expr> = (op, lhs) => {
+    const phase = `parsing a get expression`;
+    const nxt = state.next();
+    if (!nxt.isIdentifier()) {
+      return state.error(
+        `Expected a property name`,
+        phase,
+      );
+    }
+    let exp = getExpr(lhs, nxt);
+    if (state.nextIs(TokenType.LEFT_PAREN)) {
+      const args: Expr[] = [];
+      if (!state.check(TokenType.RIGHT_PAREN)) {
+        do {
+          const x = expr();
+          if (x.isLeft()) {
+            return x;
+          }
+          const arg = x.unwrap();
+          args.push(arg);
+        } while (state.nextIs(TokenType.COMMA));
+      }
+      const rparen = state.next();
+      if (!rparen.is(TokenType.RIGHT_PAREN)) {
+        return state.error(
+          `Expected “)” after the method arguments`,
+          phase,
+        );
+      }
+      return state.expr(callExpr(exp, args, op));
+    }
+    return state.expr(exp);
+  };
+
   /**
    * Parses a parenthesized expression.
    */
@@ -2982,6 +3121,14 @@ function syntaxAnalysis(code: string) {
       return expr().chain((n) => {
         return state.expr(assign(prevNode, n));
       });
+    } else if (isGetExpr(prevNode)) {
+      const rhs = expr();
+      if (rhs.isLeft()) {
+        return rhs;
+      }
+      return state.expr(
+        propSetExpr(prevNode.$object, prevNode.$name, rhs.unwrap()),
+      );
     } else {
       return state.error(
         `Expected a valid assignment target`,
@@ -3131,6 +3278,10 @@ function syntaxAnalysis(code: string) {
     return state.expr(vectorExpr(elements, leftBracket));
   };
 
+  const thisExpression: ParseRule<Expr> = (keyword) => {
+    return state.expr(thisExpr(keyword));
+  };
+
   /**
    * Alias for BP.NONE, corresponding
    * to a binding power of nothing.
@@ -3219,12 +3370,14 @@ function syntaxAnalysis(code: string) {
     // Vectors and indexing
     [TokenType.LEFT_BRACKET]: [vectorExpression, indexingExpression, BP.CALL],
 
+    // Property access (get-expression)
+    [TokenType.DOT]: [___, getExpression, BP.CALL],
+
     // Not handled by the Pratt parsing function (`expr`).
     [TokenType.LEFT_BRACE]: [setExpression, ___, BP.LITERAL],
     [TokenType.RIGHT_BRACE]: [___, ___, ___o], // Handled by block statement
     [TokenType.RIGHT_BRACKET]: [___, ___, ___o],
     [TokenType.COMMA]: [___, ___, ___o], // Handled by various parsers
-    [TokenType.DOT]: [___, ___, ___o],
     [TokenType.COLON]: [___, ___, ___o],
     [TokenType.SEMICOLON]: [___, ___, ___o], // Handled by statement parsers
     [TokenType.VBAR]: [___, ___, ___o], // Scanned as part of a fraction
@@ -3237,7 +3390,7 @@ function syntaxAnalysis(code: string) {
     [TokenType.PRINT]: [___, ___, ___o], // Handled by `printStatement`
     [TokenType.RETURN]: [___, ___, ___o], // Handled by `returnStatement`
     [TokenType.SUPER]: [___, ___, ___o],
-    [TokenType.THIS]: [___, ___, ___o],
+    [TokenType.THIS]: [thisExpression, ___, ___o],
     [TokenType.LET]: [___, ___, ___o], // Handled by `varDefStatement`
     [TokenType.WHILE]: [___, ___, ___o], // Handled by `whileStatement`
     [TokenType.VAR]: [___, ___, ___o], // Handled by `varDefStatement`
@@ -3597,12 +3750,48 @@ function syntaxAnalysis(code: string) {
     );
   };
 
+  const classDeclaration = () => {
+    const phase = `parsing a class declaration`;
+    const name = state.next();
+    if (!name.isIdentifier()) {
+      return state.error(
+        `Expected a class name after class, but got “${name.$lexeme}”`,
+        phase,
+      );
+    }
+    const lbrace = state.next();
+    if (!lbrace.is(TokenType.LEFT_BRACE)) {
+      return state.error(
+        `Expected a “{” to begin the class declaration body`,
+        phase,
+      );
+    }
+    const methods = [];
+    while (!state.check(TokenType.RIGHT_BRACE) && !state.atEnd()) {
+      const f = fnDefStatement();
+      if (f.isLeft()) {
+        return f;
+      }
+      methods.push(f.unwrap());
+    }
+    const postMethodsToken = state.next();
+    if (!postMethodsToken.is(TokenType.RIGHT_BRACE)) {
+      return state.error(
+        `Expected a “}” to close the class declaration body`,
+        phase,
+      );
+    }
+    return state.statement(classStmt(name, methods));
+  };
+
   /**
    * Parses a statement.
    */
   const statement = (): Either<Err, Statement> => {
     if (state.nextIs(TokenType.IF)) {
       return conditionalStatement();
+    } else if (state.nextIs(TokenType.CLASS)) {
+      return classDeclaration();
     } else if (state.nextIs(TokenType.FN)) {
       return fnDefStatement();
     } else if (state.nextIs(TokenType.WHILE)) {
@@ -3652,6 +3841,8 @@ type RuntimeValue =
   | ReturnValue
   | Vector
   | Matrix
+  | KlassInstance
+  | Fn
   | SET<RuntimeValue>
   | RuntimeValue[];
 
@@ -3745,12 +3936,18 @@ enum FunctionType {
   INITIALIZER,
 }
 
+enum ClassType {
+  NONE,
+  CLASS,
+}
+
 class Resolver<T extends Resolvable = Resolvable> implements Visitor<void> {
   private $scopes: (Map<string, boolean>)[] = [];
   private scopesIsEmpty() {
     return this.$scopes.length === 0;
   }
   private $currentFunction: FunctionType = FunctionType.NONE;
+  private $currentClass: ClassType = ClassType.NONE;
   private beginScope() {
     this.$scopes.push(new Map());
   }
@@ -3779,6 +3976,7 @@ class Resolver<T extends Resolvable = Resolvable> implements Visitor<void> {
       }
     }
   }
+
   private peek(): Map<string, boolean> {
     return this.$scopes[this.$scopes.length - 1];
   }
@@ -3804,11 +4002,52 @@ class Resolver<T extends Resolvable = Resolvable> implements Visitor<void> {
     const peek = this.peek();
     peek.set(name, true);
   }
+  classStmt(stmt: ClassStmt): void {
+    const enclosingClass = this.$currentClass;
+    this.$currentClass = ClassType.CLASS;
+    this.declare(stmt.$name);
+    this.define(stmt.$name.$lexeme);
+    this.beginScope();
+    const peek = this.peek();
+    peek.set("this", true);
+    const methods = stmt.$methods;
+    for (let i = 0; i < methods.length; i++) {
+      const method = methods[i];
+      let declaration = FunctionType.METHOD;
+      if (method.$name.$lexeme === "def") {
+        declaration = FunctionType.INITIALIZER;
+      }
+      this.resolveFn(method, declaration);
+    }
+    this.endScope();
+    this.$currentClass = enclosingClass;
+    return;
+  }
   setExpr(expr: SetExpr): void {
     this.resolveEach(expr.$elements);
     return;
   }
-
+  getExpr(expr: PropGetExpr): void {
+    this.resolve(expr.$object);
+    return;
+  }
+  propSetExpr(expr: PropSetExpr): void {
+    this.resolve(expr.$value);
+    this.resolve(expr.$object);
+    return;
+  }
+  thisExpr(expr: ThisExpr): void {
+    if (this.$currentClass === ClassType.NONE) {
+      throw runtimeError(
+        `Cannot use “this” outside of a class`,
+        `resolving a this-expression`,
+        expr.$keyword.$line,
+        expr.$keyword.$column,
+      );
+    }
+    this.resolveLocal(expr, expr.$keyword.$lexeme);
+    return;
+  }
   intExpr(expr: IntExpr): void {
     return;
   }
@@ -3926,6 +4165,14 @@ class Resolver<T extends Resolvable = Resolvable> implements Visitor<void> {
         stmt.$keyword.$column,
       );
     }
+    if (this.$currentFunction === FunctionType.INITIALIZER) {
+      throw runtimeError(
+        `Can’t return a value from a class def`,
+        `resolving a return statement`,
+        stmt.$keyword.$line,
+        stmt.$keyword.$column,
+      )
+    }
     this.resolve(stmt.$value);
     return;
   }
@@ -3969,6 +4216,7 @@ class Resolver<T extends Resolvable = Resolvable> implements Visitor<void> {
     }
   }
 }
+
 const resolvable = (client: Resolvable) => (
   new Resolver(client)
 );
@@ -4022,10 +4270,21 @@ const nativeFn = (f: (...args: any[]) => RuntimeValue) => (
 class Fn extends Callable {
   private $closure: Environment<RuntimeValue>;
   private $declaration: FnDefStmt;
-  constructor(closure: Environment<RuntimeValue>, declaration: FnDefStmt) {
+  private $isInitializer: boolean;
+  constructor(
+    closure: Environment<RuntimeValue>,
+    declaration: FnDefStmt,
+    isInitializer: boolean,
+  ) {
     super();
     this.$closure = closure;
     this.$declaration = declaration;
+    this.$isInitializer = isInitializer;
+  }
+  bind(instance: KlassInstance) {
+    const environment = env(this.$closure);
+    environment.define("this", instance);
+    return fn(environment, this.$declaration, this.$isInitializer);
   }
   call(interpreter: Interpreter, args: RuntimeValue[]) {
     const environment = env(this.$closure);
@@ -4040,9 +4299,14 @@ class Fn extends Callable {
         this.$declaration.$body,
         environment,
       );
+      if (this.$isInitializer) {
+        return this.$closure.getAt(0, "this");
+      }
       return out;
     } catch (error) {
-      if (error instanceof ReturnValue) {
+      if (this.$isInitializer) {
+        return this.$closure.getAt(0, "this");
+      } else if (error instanceof ReturnValue) {
         return error.$value;
       } else {
         throw error;
@@ -4061,9 +4325,76 @@ const isCallable = (x: any): x is Fn => (
 /**
  * Returns a new runtime function.
  */
-const fn = (closure: Environment<RuntimeValue>, declaration: FnDefStmt) => (
-  new Fn(closure, declaration)
+const fn = (
+  closure: Environment<RuntimeValue>,
+  declaration: FnDefStmt,
+  isInitializer: boolean,
+) => (
+  new Fn(closure, declaration, isInitializer)
 );
+
+/**
+ * A runtime instance of a given Klass.
+ */
+class KlassInstance {
+  $klass: Klass;
+  $fields: Map<string, RuntimeValue> = new Map();
+  constructor(klass: Klass) {
+    this.$klass = klass;
+  }
+  set(name: Token, value: RuntimeValue) {
+    this.$fields.set(name.$lexeme, value);
+  }
+  get(name: Token) {
+    if (this.$fields.has(name.$lexeme)) {
+      return this.$fields.get(name.$lexeme)!;
+    }
+    const method = this.$klass.findMethod(name.$lexeme);
+    if (method !== null) {
+      return method.bind(this);
+    }
+    throw runtimeError(
+      `Undefined property ${name.$lexeme}`,
+      `interpreting a property-get`,
+      name.$line,
+      name.$column,
+    );
+  }
+  toString() {
+    return this.$klass.$name + " instance";
+  }
+}
+
+/**
+ * A runtime Klass definition.
+ */
+class Klass extends Callable {
+  $name: string;
+  $methods: Map<string, Fn>;
+  constructor(name: string, methods: Map<string, Fn>) {
+    super();
+    this.$name = name;
+    this.$methods = methods;
+  }
+  findMethod(name: string) {
+    if (this.$methods.has(name)) {
+      return this.$methods.get(name)!;
+    } else {
+      return null;
+    }
+  }
+  toString() {
+    return name;
+  }
+  call(interpreter: Interpreter, args: RuntimeValue[]): RuntimeValue {
+    const instance = new KlassInstance(this);
+    const initializer = this.findMethod("def");
+    if (initializer !== null) {
+      initializer.bind(instance).call(interpreter, args);
+    }
+    return instance;
+  }
+}
 
 /**
  * Returns the assumed truth value
@@ -4150,9 +4481,11 @@ class Interpreter implements Visitor<RuntimeValue> {
       return left(error as Err);
     }
   }
+
   evaluate(node: ASTNode): RuntimeValue {
     return node.accept(this);
   }
+
   intExpr(expr: IntExpr): RuntimeValue {
     return expr.$value;
   }
@@ -4230,6 +4563,35 @@ class Interpreter implements Visitor<RuntimeValue> {
       elements.push(elem);
     }
     return set(elements);
+  }
+  getExpr(expr: PropGetExpr): RuntimeValue {
+    const object = this.evaluate(expr.$object);
+    if (object instanceof KlassInstance) {
+      return object.get(expr.$name);
+    }
+    throw runtimeError(
+      `Only instances have properties`,
+      `interpreting a property-get-expression`,
+      expr.$name.$line,
+      expr.$name.$column,
+    );
+  }
+  propSetExpr(expr: PropSetExpr): RuntimeValue {
+    const object = this.evaluate(expr.$object);
+    if (!(object instanceof KlassInstance)) {
+      throw runtimeError(
+        `Only instances have fields`,
+        `interpreting a property-set-expression`,
+        expr.$name.$line,
+        expr.$name.$column,
+      );
+    }
+    const value = this.evaluate(expr.$value);
+    object.set(expr.$name, value);
+    return value;
+  }
+  thisExpr(expr: ThisExpr): RuntimeValue {
+    return this.lookupVariable(expr.$keyword, expr);
   }
   tupleExpr(expr: TupleExpr): RuntimeValue {
     const elements: RuntimeValue[] = [];
@@ -4465,7 +4827,7 @@ class Interpreter implements Visitor<RuntimeValue> {
     return this.evaluate(stmt.$expression);
   }
   fnDefStmt(stmt: FnDefStmt): RuntimeValue {
-    const f = fn(this.$env, stmt);
+    const f = fn(this.$env, stmt, false);
     this.$env.define(stmt.$name.$lexeme, f);
     return f;
   }
@@ -4475,6 +4837,18 @@ class Interpreter implements Visitor<RuntimeValue> {
     } else {
       return this.evaluate(stmt.$else);
     }
+  }
+  classStmt(stmt: ClassStmt): RuntimeValue {
+    this.$env.define(stmt.$name.$lexeme, null);
+    const methods = new Map<string, Fn>();
+    for (let i = 0; i < stmt.$methods.length; i++) {
+      const method = stmt.$methods[i];
+      const f = fn(this.$env, method, method.$name.$lexeme === "def");
+      methods.set(stmt.$methods[i].$name.$lexeme, f);
+    }
+    const klass = new Klass(stmt.$name.$lexeme, methods);
+    this.$env.assign(stmt.$name, klass);
+    return null;
   }
 }
 
@@ -4538,7 +4912,7 @@ const compiler = (settings: Partial<InterpreterSettings> = {}) => {
       return lexicalAnalysis(code).stream();
     },
     ast(code: string) {
-      return syntaxAnalysis(code).statements();
+      return treed(syntaxAnalysis(code).statements());
     },
     execute(code: string) {
       const ast = syntaxAnalysis(code).statements();
@@ -4566,13 +4940,8 @@ const compiler = (settings: Partial<InterpreterSettings> = {}) => {
   };
 };
 
-const j = compiler().execute(`
-class Circle {
-  id() {
-    print "circle";
-  }
-}
-let j = Circle();
-j.id();
+const j = compiler().ast(`
+fn f(x) = x^2;
 `);
+// print(j);
 // print(j);

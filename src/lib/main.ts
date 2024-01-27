@@ -1,4 +1,6 @@
 const print = console.log;
+
+// § Native Mathematical Functions
 const {
   abs,
   acos,
@@ -62,17 +64,13 @@ const factorialize = (num: number) => {
   return num;
 };
 
-/**
- * Returns `a rem b` (the signed remainder).
- */
+/** Returns `a rem b` (the signed remainder). */
 const rem = (a: number, b: number) => (a % b);
 
-/**
- * Returns `a mod b` (the unsigned remainder).
- */
+/** Returns `a mod b` (the unsigned remainder).  */
 const mod = (a: number, b: number) => ((a % b) + b) % b;
 
-// § Tree Printer
+// § Tree Printer ==============================================================
 /**
  * In later sections, it will be useful to print
  * a pretty form of a given object tree.
@@ -175,6 +173,7 @@ export const treed = (obj: Object) => {
   return str();
 };
 
+// § Auxiliary Functions =======================================================
 /**
  * At the parsing stage, all parsed node results
  * are kept in an `Either` type (either an AST node)
@@ -257,6 +256,8 @@ const left = <T>(x: T): Left<T> => new Left(x);
 /** Returns a new right. */
 const right = <T>(x: T): Right<T> => new Right(x);
 
+// § Mathematical Objects ======================================================
+
 /**
  * § Runtime Values
  *
@@ -326,6 +327,8 @@ class SET<T> {
     this.$elements = new Set(elements);
   }
 }
+
+/** Returns a new Set. */
 const set = <T>(elements: T[]) => (new SET(elements));
 
 /**
@@ -344,9 +347,7 @@ class Vector {
   }
 }
 
-/**
- * Returns a new vector.
- */
+/** Returns a new vector. */
 const vector = (elements: number[]) => (
   new Vector(elements)
 );
@@ -379,9 +380,7 @@ class Matrix {
   }
 }
 
-/**
- * Returns a new matrix.
- */
+/** Returns a new matrix. */
 const matrix = (vectors: Vector[]) => (
   new Matrix(vectors)
 );
@@ -393,11 +392,6 @@ const matrix = (vectors: Vector[]) => (
 const isMatrix = (x: any): x is Matrix => (
   x instanceof Matrix
 );
-
-// § Graphics ==========================================================
-/**
- * The following section implements Woven’s SVG graphics module.
- */
 
 // § Start: Compiler ===================================================
 
@@ -1806,7 +1800,7 @@ class IntExpr extends Expr {
 /**
  * Returns a new integer literal node.
  */
-const int = (value: number) => (
+const intExpr = (value: number) => (
   new IntExpr(value)
 );
 
@@ -2843,7 +2837,7 @@ function syntaxAnalysis(code: string) {
       if (token.is(TokenType.FLOAT)) {
         return state.expr(float(token.$literal));
       } else {
-        return state.expr(int(token.$literal));
+        return state.expr(intExpr(token.$literal));
       }
     } else {
       return state.error(
@@ -3145,7 +3139,7 @@ function syntaxAnalysis(code: string) {
       const right = binex(
         node,
         op.type(TokenType.MINUS).lexeme("-"),
-        int(1),
+        intExpr(1),
       );
       return state.expr(assign(node, right));
     } else {
@@ -3164,7 +3158,7 @@ function syntaxAnalysis(code: string) {
       const right = binex(
         node,
         op.type(TokenType.PLUS).lexeme("+"),
-        int(1),
+        intExpr(1),
       );
       return state.expr(assign(node, right));
     } else {
@@ -4171,7 +4165,7 @@ class Resolver<T extends Resolvable = Resolvable> implements Visitor<void> {
         `resolving a return statement`,
         stmt.$keyword.$line,
         stmt.$keyword.$column,
-      )
+      );
     }
     this.resolve(stmt.$value);
     return;
@@ -4852,7 +4846,10 @@ class Interpreter implements Visitor<RuntimeValue> {
   }
 }
 
-const compiler = (settings: Partial<InterpreterSettings> = {}) => {
+/**
+ * Returns a Woven compiler.
+ */
+export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
   const defaultSettings: InterpreterSettings = {
     globalConstants: {
       pi: PI,
@@ -4908,12 +4905,37 @@ const compiler = (settings: Partial<InterpreterSettings> = {}) => {
     };
   }
   return {
+    /**
+     * Returns a stringified array of tokens.
+     */
     tokens(code: string) {
-      return lexicalAnalysis(code).stream();
+      const result = lexicalAnalysis(code).stream();
+      if (result.isLeft()) {
+        return result.unwrap().print();
+      } else {
+        let outputText = "";
+        const tokens = result.unwrap();
+        tokens.forEach((token) => {
+          outputText = outputText + token.toString() + "\n";
+        });
+        return outputText;
+      }
     },
+    /**
+     * Returns a pretty-print tree of the AST.
+     */
     ast(code: string) {
-      return treed(syntaxAnalysis(code).statements());
+      const result = syntaxAnalysis(code).statements();
+      if (result.isLeft()) {
+        return result.unwrap().print();
+      } else {
+        const tree = result.unwrap();
+        return treed(tree);
+      }
     },
+    /**
+     * Executes the given code.
+     */
     execute(code: string) {
       const ast = syntaxAnalysis(code).statements();
       if (ast.isLeft()) {
@@ -4940,8 +4962,6 @@ const compiler = (settings: Partial<InterpreterSettings> = {}) => {
   };
 };
 
-const j = compiler().ast(`
-fn f(x) = x^2;
-`);
-// print(j);
-// print(j);
+const j = `
+let y = derive(3x^2);
+`;

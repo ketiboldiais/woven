@@ -50,7 +50,6 @@ abstract class Compound extends MathExpression {
  * arguments.
  */
 class Sum extends Compound {
-  $op: "+" = "+";
   constructor(args: MathExpression[]) {
     super("+", args);
   }
@@ -60,7 +59,7 @@ class Sum extends Compound {
 const sum = (args: MathExpression[]) => (new Sum(args));
 
 /** Returns true if the given object is a sum expression. */
-const isSum = (obj:any): obj is Sum => (obj instanceof Sum);
+const isSum = (obj: any): obj is Sum => (obj instanceof Sum);
 
 /**
  * An object corresponding to a product.
@@ -68,14 +67,34 @@ const isSum = (obj:any): obj is Sum => (obj instanceof Sum);
  * of arguments.
  */
 class Product extends Compound {
-  $op: "*" = "*";
   constructor(args: MathExpression[]) {
     super("*", args);
   }
 }
 
 /** Returns a new product expression. */
-const product = (args:MathExpression[]) => (new Product(args));
+const product = (args: MathExpression[]) => (new Product(args));
 
 /** Returns true if the given object is a product. */
-const isProduct = (obj:any): obj is Product => (obj instanceof Product);
+const isProduct = (obj: any): obj is Product => (obj instanceof Product);
+
+/**
+ * An object corresponding to a power expression.
+ * The `^` operator is a binary infix operator.
+ * That is, `^` always takes two, and only two,
+ * arguments.
+ */
+class Power extends Compound {
+  $args: [MathExpression, MathExpression];
+  constructor(base: MathExpression, exponent: MathExpression) {
+    super("^", [base, exponent]);
+    this.$args = [base, exponent];
+  }
+}
+
+/** Returns a new power expression. */
+const power = (
+  base: MathExpression,
+  exponent: MathExpression,
+) => (new Power(base, exponent));
+

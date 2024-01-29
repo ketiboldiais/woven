@@ -1,6 +1,6 @@
 const print = console.log;
 
-// § Native Mathematical Functions
+// § Native Mathematical Functions =============================================
 const {
   abs,
   acos,
@@ -26,7 +26,6 @@ const {
   log2: lg,
   max,
   min,
-  pow,
   random,
   round,
   sign: sgn,
@@ -37,20 +36,22 @@ const {
   tanh,
   trunc,
 } = Math;
+
+// § Native Mathematical Constants =============================================
 const MAX_INT = Number.MAX_SAFE_INTEGER;
 const MAX_FLOAT = Number.MAX_VALUE;
 
-/**
- * Returns a% of b.
- */
+/** Returns a% of b. */
 const percent = (a: number, b: number) => ((a / 100) * b);
 
-const isInteger = (n: any): n is number => (
-  typeof n === "number" && (Number.isInteger(n))
+/** Returns true if the given `n` is a JavaScript number. */
+const isJSNum = (x: any): x is number => (
+  typeof x === "number" && !Number.isNaN(x)
 );
 
-const isNumber = (x: any): x is number => (
-  typeof x === "number" && !Number.isNaN(x)
+/** Returns true if the given `n` is a JavaScript integer. */
+const isJSInt = (n: any): n is number => (
+  typeof n === "number" && (Number.isInteger(n))
 );
 
 /** Returns the factorial of the given number. */
@@ -257,15 +258,11 @@ const left = <T>(x: T): Left<T> => new Left(x);
 const right = <T>(x: T): Right<T> => new Right(x);
 
 // § Mathematical Objects ======================================================
+// What follows are JavaScript objects that are created during
+// code interpretation. These objects are also used in Woven’s algebraic
+// runtime.
 
-/**
- * § Runtime Values
- *
- * What follows are runtime values that will be associated
- * with particular nodes.
- */
-
-/** A class corresponding to a fraction.  */
+/** An object corresponding to a fraction.  */
 class Fraction {
   /** The numerator of this fraction. */
   $n: number;
@@ -277,13 +274,9 @@ class Fraction {
   }
 }
 
-/**
- * Returns a new fraction.
- * @param n - The fraction’s numerator.
- * @param d - The fraction’s denominator.
- */
-const frac = (n: number, d: number) => (
-  new Fraction(n, d)
+/** Returns a new fraction. */
+const frac = (numerator: number, denominator: number) => (
+  new Fraction(numerator, denominator)
 );
 
 /**
@@ -294,9 +287,7 @@ const isFrac = (value: any): value is Fraction => (
   value instanceof Fraction
 );
 
-/**
- * A class corresponding to a scientific number.
- */
+/** An object corresponding to a scientific number. */
 class Scinum {
   $b: number;
   $e: number;
@@ -306,9 +297,7 @@ class Scinum {
   }
 }
 
-/**
- * Returns a new scientific number.
- */
+/** Returns a new scientific number. */
 const scinum = (base: number, exponent: number) => (
   new Scinum(base, exponent)
 );
@@ -321,7 +310,7 @@ const isScinum = (value: any): value is Scinum => (
   value instanceof Scinum
 );
 
-class SET<T> {
+class MSet<T> {
   $elements: Set<T>;
   constructor(elements: T[]) {
     this.$elements = new Set(elements);
@@ -329,11 +318,9 @@ class SET<T> {
 }
 
 /** Returns a new Set. */
-const set = <T>(elements: T[]) => (new SET(elements));
+const set = <T>(elements: T[]) => (new MSet(elements));
 
-/**
- * An object corresponding to a vector.
- */
+/** An object corresponding to a vector. */
 class Vector {
   $elements: number[];
   constructor(elements: number[]) {
@@ -3837,7 +3824,7 @@ type RuntimeValue =
   | Matrix
   | KlassInstance
   | Fn
-  | SET<RuntimeValue>
+  | MSet<RuntimeValue>
   | RuntimeValue[];
 
 class Environment<T> {
@@ -4506,7 +4493,7 @@ class Interpreter implements Visitor<RuntimeValue> {
   }
   indexingExpr(expr: IndexingExpr): RuntimeValue {
     const index = this.evaluate(expr.$index);
-    if (!isInteger(index)) {
+    if (!isJSInt(index)) {
       throw runtimeError(
         `Non-integer value passed as an index`,
         `interpreting an index expression`,
@@ -4743,7 +4730,7 @@ class Interpreter implements Visitor<RuntimeValue> {
       return !truthValue(arg);
     }
     if (expr.$op.is(TokenType.MINUS)) {
-      if (!isNumber(arg)) {
+      if (!isJSNum(arg)) {
         throw runtimeError(
           `Invalid operand passed to “-”. Numeric negation is only defined on numbers.`,
           `interpreting a unary negation expression`,
@@ -4754,7 +4741,7 @@ class Interpreter implements Visitor<RuntimeValue> {
       return -arg;
     }
     if (expr.$op.is(TokenType.BANG)) {
-      if (isInteger(arg)) {
+      if (isJSInt(arg)) {
         return factorialize(arg);
       } else {
         throw runtimeError(
@@ -4880,7 +4867,6 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
       lg: nativeFn(lg),
       max: nativeFn(max),
       min: nativeFn(min),
-      pow: nativeFn(pow),
       rand: nativeFn(random),
       round: nativeFn(round),
       sgn: nativeFn(sgn),

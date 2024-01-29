@@ -1,6 +1,5 @@
 /** An object corresponding to a mathematical expression. */
-abstract class MathExpression {
-}
+abstract class MathExpression {}
 
 /** An object corresponding to an atomic expression. */
 abstract class Atom extends MathExpression {}
@@ -14,6 +13,9 @@ class Int extends Atom {
   }
 }
 
+/** Returns a new integer. */
+const int = (value: number) => (new Int(value));
+
 /** An object corresponding to a symbol. */
 class Sym extends Atom {
   $s: string;
@@ -22,6 +24,9 @@ class Sym extends Atom {
     this.$s = symbol;
   }
 }
+
+/** Returns a new symbol. */
+const sym = (symbol: string) => (new Sym(symbol));
 
 /**
  * An object corresponding to a compound
@@ -38,3 +43,39 @@ abstract class Compound extends MathExpression {
     this.$args = args;
   }
 }
+
+/**
+ * An object corresponding to a sum.
+ * Sums may have an arbitrary number of
+ * arguments.
+ */
+class Sum extends Compound {
+  $op: "+" = "+";
+  constructor(args: MathExpression[]) {
+    super("+", args);
+  }
+}
+
+/** Returns a new sum expression. */
+const sum = (args: MathExpression[]) => (new Sum(args));
+
+/** Returns true if the given object is a sum expression. */
+const isSum = (obj:any): obj is Sum => (obj instanceof Sum);
+
+/**
+ * An object corresponding to a product.
+ * Products may have an arbitrary number
+ * of arguments.
+ */
+class Product extends Compound {
+  $op: "*" = "*";
+  constructor(args: MathExpression[]) {
+    super("*", args);
+  }
+}
+
+/** Returns a new product expression. */
+const product = (args:MathExpression[]) => (new Product(args));
+
+/** Returns true if the given object is a product. */
+const isProduct = (obj:any): obj is Product => (obj instanceof Product);

@@ -14,7 +14,7 @@ const {
   clz32,
   cos,
   cosh,
-  exp,
+  exp: EXP,
   expm1,
   floor,
   fround,
@@ -2198,7 +2198,7 @@ class RelationExpr extends Expr {
 /**
  * Returns a new relation expression.
  */
-const relation = (left: Expr, op: Token, right: Expr) => (
+const relationExpr = (left: Expr, op: Token, right: Expr) => (
   new RelationExpr(left, op, right)
 );
 
@@ -2768,7 +2768,7 @@ class ParserState {
    */
   atEnd() {
     return (
-      this.$lexer.isDone() ||
+      this.$peek.is(TokenType.END) ||
       this.$error !== null
     );
   }
@@ -2793,13 +2793,13 @@ class ParserState {
   /**
    * Returns a new Right<Statement>
    */
-  statement<S extends Statement>(stmt: S) {
+  statement<S>(stmt: S) {
     return right(stmt);
   }
   /**
    * Returns a new Right<Expr>
    */
-  expr<E extends Expr>(expr: E) {
+  expr<E>(expr: E) {
     return right(expr);
   }
 
@@ -2939,7 +2939,7 @@ function syntaxAnalysis(code: string) {
   const compare: ParseRule<Expr> = (op, lhs) => {
     return expr().chain((rhs) => {
       return state.expr(
-        relation(lhs, op, rhs),
+        relationExpr(lhs, op, rhs),
       );
     });
   };
@@ -4855,7 +4855,7 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
       clz32: nativeFn(clz32),
       cos: nativeFn(cos),
       cosh: nativeFn(cosh),
-      exp: nativeFn(exp),
+      exp: nativeFn(EXP),
       expm1: nativeFn(expm1),
       floor: nativeFn(floor),
       fround: nativeFn(fround),
@@ -4949,22 +4949,76 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
 };
 
 /** An object corresponding to a mathematical expression. */
-abstract class MathExpression {}
+abstract class MathExpression {
+  /**
+   * Returns true if this expression is an algebraic
+   * expression, false otherwise.
+   */
+  abstract isAlgebraic(): this is AlgebraicExpression;
+}
 
 /** An object corresponding to an atomic expression. */
 abstract class Atom extends MathExpression {}
+
+type AlgebraicExpression =
+  | Int
+  | Sym
+  | Sum
+  | Power
+  | Difference
+  | Quotient
+  | Factorial
+  | ParenthesizedExpression<AlgebraicExpression>
+  | AlgebraicFn;
+
+class ParenthesizedExpression<T extends MathExpression> extends MathExpression {
+  $inner: T;
+  constructor(inner: T) {
+    super();
+    this.$inner = inner;
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return this.$inner.isAlgebraic();
+  }
+}
+
+const parend = <T extends MathExpression>(expression: T) => (
+  new ParenthesizedExpression(expression)
+);
 
 /** An object corresponding to an integer. */
 class Int extends Atom {
   $n: number;
   constructor(value: number) {
     super();
-    this.$n = Math.floor(value);
+    this.$n = floor(value);
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
   }
 }
 
 /** Returns a new integer. */
 const int = (value: number) => (new Int(value));
+
+/** An object corresponding to a rational number. */
+class Rational extends Atom {
+  $n: number;
+  $d: number;
+  constructor(n: number, d: number) {
+    super();
+    this.$n = floor(n);
+    this.$d = floor(d);
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+}
+
+/** Returns a new rational. */
+const rat = (numerator: number, denominator: number) => (
+  new Rational(numerator, denominator)
+);
 
 /** An object corresponding to a symbol. */
 class Sym extends Atom {
@@ -4973,10 +5027,23 @@ class Sym extends Atom {
     super();
     this.$s = symbol;
   }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
 }
 
 /** Returns a new symbol. */
 const sym = (symbol: string) => (new Sym(symbol));
+
+class Undefined extends Atom {
+  constructor() {
+    super();
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+}
+const dne = () => (new Undefined());
 
 /** An object corresponding to a real number. */
 class Real extends Atom {
@@ -4984,6 +5051,9 @@ class Real extends Atom {
   constructor(value: number) {
     super();
     this.$n = value;
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
   }
 }
 
@@ -5006,19 +5076,43 @@ abstract class Compound extends MathExpression {
   }
 }
 
+/** An object corresponding to a relational expression. */
+class Relation extends Compound {
+  $args: [MathExpression, MathExpression];
+  constructor(op: string, left: MathExpression, right: MathExpression) {
+    super(op, [left, right]);
+    this.$args = [left, right];
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return false;
+  }
+}
+
+/** Returns a new relational expression. */
+const relation = (op: string, left: MathExpression, right: MathExpression) => (
+  new Relation(op, left, right)
+);
+
 /**
  * An object corresponding to a sum.
  * Sums may have an arbitrary number of
  * arguments.
  */
 class Sum extends Compound {
-  constructor(args: MathExpression[]) {
+  $args: AlgebraicExpression[];
+  constructor(args: AlgebraicExpression[]) {
     super("+", args);
+    this.$args = args;
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
   }
 }
 
 /** Returns a new sum expression. */
-const sum = (args: MathExpression[]) => (new Sum(args));
+const sum = (args: AlgebraicExpression[]) => (
+  new Sum(args)
+);
 
 /** Returns true if the given object is a sum expression. */
 const isSum = (obj: any): obj is Sum => (obj instanceof Sum);
@@ -5029,13 +5123,19 @@ const isSum = (obj: any): obj is Sum => (obj instanceof Sum);
  * of arguments.
  */
 class Product extends Compound {
-  constructor(args: MathExpression[]) {
+  $args: AlgebraicExpression[];
+  constructor(args: AlgebraicExpression[]) {
     super("*", args);
+
+    this.$args = args;
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
   }
 }
 
 /** Returns a new product expression. */
-const product = (args: MathExpression[]) => (new Product(args));
+const product = (args: AlgebraicExpression[]) => (new Product(args));
 
 /** Returns true if the given object is a product. */
 const isProduct = (obj: any): obj is Product => (obj instanceof Product);
@@ -5047,72 +5147,432 @@ const isProduct = (obj: any): obj is Product => (obj instanceof Product);
  * arguments.
  */
 class Power extends Compound {
-  $args: [MathExpression, MathExpression];
-  constructor(base: MathExpression, exponent: MathExpression) {
+  $args: [AlgebraicExpression, AlgebraicExpression];
+  constructor(base: AlgebraicExpression, exponent: AlgebraicExpression) {
     super("^", [base, exponent]);
     this.$args = [base, exponent];
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
   }
 }
 
 /** Returns a new power expression. */
 const power = (
-  base: MathExpression,
-  exponent: MathExpression,
+  base: AlgebraicExpression,
+  exponent: AlgebraicExpression,
 ) => (new Power(base, exponent));
 
 /** An object corresponding to a difference expression. */
 class Difference extends Compound {
-  $args: [MathExpression, MathExpression];
-  constructor(left: MathExpression, right: MathExpression) {
+  $args: [AlgebraicExpression, AlgebraicExpression];
+  constructor(left: AlgebraicExpression, right: AlgebraicExpression) {
     super("-", [left, right]);
     this.$args = [left, right];
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
   }
 }
 
 /** Returns the difference expression `left - right`. */
-const diff = (left: MathExpression, right: MathExpression) => (
+const diff = (left: AlgebraicExpression, right: AlgebraicExpression) => (
   new Difference(left, right)
 );
 
 /** Returns the negation of the given expression. */
-const neg = (expression: MathExpression) => (
+const neg = (expression: AlgebraicExpression) => (
   product([int(-1), expression])
 );
 
 /** An object corresponding to a quotient. */
 class Quotient extends Compound {
-  $args: [MathExpression, MathExpression];
-  constructor(a: MathExpression, b: MathExpression) {
+  $args: [AlgebraicExpression, AlgebraicExpression];
+  constructor(a: AlgebraicExpression, b: AlgebraicExpression) {
     super("/", [a, b]);
     this.$args = [a, b];
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
   }
 }
 
 /** Returns a new quotient expression. */
-const quotient = (a: MathExpression, b: MathExpression) => (
+const quotient = (a: AlgebraicExpression, b: AlgebraicExpression) => (
   new Quotient(a, b)
 );
 
 /** An object corresponding to a factorial. */
 class Factorial extends Compound {
-  $args: [MathExpression];
-  constructor(arg: MathExpression) {
+  $args: [AlgebraicExpression];
+  constructor(arg: AlgebraicExpression) {
     super("!", [arg]);
     this.$args = [arg];
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
   }
 }
 
 /** Returns a new factorial expression. */
-const factorial = (arg: MathExpression) => (new Factorial(arg));
+const factorial = (arg: AlgebraicExpression) => (new Factorial(arg));
 
 /** A class corresponding to a function call. */
-class Fun extends Compound {
-  constructor(functionName: string, args: MathExpression[]) {
+class AlgebraicFn extends Compound {
+  $args: AlgebraicExpression[];
+  constructor(functionName: string, args: AlgebraicExpression[]) {
     super(functionName, args);
+    this.$args = args;
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
   }
 }
 
 /** Returns a new function call expression. */
-const fun = (functionName: string, args: MathExpression[]) => (
-  new Fun(functionName, args)
+const fun = (functionName: string, args: AlgebraicExpression[]) => (
+  new AlgebraicFn(functionName, args)
 );
+
+function exp(code: string) {
+  const state = enstate(code);
+
+  const symbol: ParseRule<MathExpression> = (op) => {
+    if (!op.isIdentifier()) {
+      return state.error(
+        `Expected symbol`,
+        `parsing symbol`,
+      );
+    } else {
+      return state.expr(sym(op.$lexeme));
+    }
+  };
+  const float: ParseRule<MathExpression> = (op) => {
+    if (!op.isNumericToken()) {
+      return state.error(
+        `Expected integer`,
+        `parsing integer`,
+      );
+    } else {
+      return state.expr(real(op.$literal));
+    }
+  };
+  const integer: ParseRule<MathExpression> = (op) => {
+    if (!op.isNumericToken()) {
+      return state.error(
+        `Expected integer`,
+        `parsing integer`,
+      );
+    } else {
+      return state.expr(int(op.$literal));
+    }
+  };
+  const rational: ParseRule<MathExpression> = (op) => {
+    if (!op.isFraction()) {
+      return state.error(
+        `Expected a rational`,
+        `parsing a rational`,
+      );
+    } else {
+      const literal = op.$literal;
+      return state.expr(rat(literal.$n, literal.$d));
+    }
+  };
+
+  const diffExpr: ParseRule<MathExpression> = (op, left) => {
+    if (!left.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '-'`,
+        "parsing a quotient",
+      );
+    }
+    const rhs = expr(precOf(op.$type));
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const right = rhs.unwrap();
+    if (!right.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '-'`,
+        "parsing a quotient",
+      );
+    }
+    const out = diff(left, right);
+    return state.expr(out);
+  };
+
+  const quotientExpr: ParseRule<MathExpression> = (op, left) => {
+    if (!left.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '/'`,
+        "parsing a quotient",
+      );
+    }
+    const rhs = expr(precOf(op.$type));
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const right = rhs.unwrap();
+    if (!right.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '/'`,
+        "parsing a quotient",
+      );
+    }
+    const out = quotient(left, right);
+    return state.expr(out);
+  };
+
+  const powerExpr: ParseRule<MathExpression> = (op, left) => {
+    if (!left.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '^'`,
+        `parsing a power`,
+      );
+    }
+    const rhs = expr();
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const right = rhs.unwrap();
+    if (!right.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '^'`,
+        `parsing a power`,
+      );
+    }
+    const out = power(left, right);
+    return state.expr(out);
+  };
+
+  const factorialExpr: ParseRule<MathExpression> = (op, arg) => {
+    if (!arg.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '!'`,
+        `parsing a factorial`
+      )
+    }
+    const out = factorial(arg);
+    return state.expr(out);
+  }
+  
+  const productExpr: ParseRule<MathExpression> = (op, left) => {
+    const rhs = expr(precOf(op.$type));
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const right = rhs.unwrap();
+    if (!left.isAlgebraic() || !right.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '*'`,
+        `parsing a product`,
+      );
+    }
+    const args: AlgebraicExpression[] = [];
+    if (isProduct(left)) {
+      args.push(...left.$args);
+    } else {
+      args.push(left);
+    }
+    if (isProduct(right)) {
+      args.push(...right.$args);
+    } else {
+      args.push(right);
+    }
+    const out = product(args);
+    return state.expr(out);
+  };
+  const sumExpr: ParseRule<MathExpression> = (op, left) => {
+    const rhs = expr(precOf(op.$type));
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const right = rhs.unwrap();
+    if (!left.isAlgebraic() || !right.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '+'`,
+        `parsing a sum`,
+      );
+    }
+    const args: AlgebraicExpression[] = [];
+    if (isSum(left)) {
+      args.push(...left.$args);
+    } else {
+      args.push(left);
+    }
+    if (isSum(right)) {
+      args.push(...right.$args);
+    } else {
+      args.push(right);
+    }
+    const out = sum(args);
+    return state.expr(out);
+  };
+
+  const primary: ParseRule<MathExpression> = (lparen) => {
+    const inner = expr();
+    if (inner.isLeft()) {
+      return inner;
+    }
+    if (!state.nextIs(TokenType.RIGHT_PAREN)) {
+      return state.error(
+        `Expected a closing “)”`,
+        `parsing a parenthesized expression`,
+      );
+    }
+    return state.expr(parend(inner.unwrap()));
+  };
+
+  /**
+   * Alias for BP.NONE, corresponding
+   * to a binding power of nothing.
+   * This is used purely as a placeholder
+   * for the ParseRuleTable.
+   */
+  const ___o = BP.NONE;
+
+  /**
+   * A parse rule that always returns an
+   * error. This is used purely as a
+   * placeholder for empty slots in the
+   * parse rules table.
+   */
+  const ___: ParseRule<MathExpression> = (t) => {
+    if (state.$error !== null) {
+      return left(state.$error);
+    } else {
+      return state.error(
+        `Unrecognized lexeme in algebraic parser: ${t.$lexeme}`,
+        `algebraic expression`,
+      );
+    }
+  };
+  const rules: ParseRuleTable<MathExpression> = {
+    [TokenType.PLUS]: [___, sumExpr, BP.SUM],
+    [TokenType.MINUS]: [___, diffExpr, BP.DIFFERENCE],
+    [TokenType.SLASH]: [___, quotientExpr, BP.QUOTIENT],
+    [TokenType.STAR]: [___, productExpr, BP.PRODUCT],
+    [TokenType.CARET]: [___, powerExpr, BP.POWER],
+    [TokenType.LEFT_PAREN]: [primary, ___, BP.CALL],
+    [TokenType.RIGHT_PAREN]: [___, ___, ___o],
+    [TokenType.IDENTIFIER]: [symbol, ___, BP.LITERAL],
+    [TokenType.INT]: [integer, ___, BP.LITERAL],
+    [TokenType.FLOAT]: [float, ___, BP.LITERAL],
+    [TokenType.FRACTION]: [rational, ___, BP.LITERAL],
+    [TokenType.BANG]: [___, factorialExpr, BP.POSTFIX],
+
+    [TokenType.LEFT_BRACE]: [___, ___, ___o],
+    [TokenType.RIGHT_BRACE]: [___, ___, ___o],
+    [TokenType.LEFT_BRACKET]: [___, ___, ___o],
+    [TokenType.RIGHT_BRACKET]: [___, ___, ___o],
+    [TokenType.COMMA]: [___, ___, ___o],
+    [TokenType.DOT]: [___, ___, ___o],
+    [TokenType.COLON]: [___, ___, ___o],
+    [TokenType.SEMICOLON]: [___, ___, ___o],
+    [TokenType.VBAR]: [___, ___, ___o],
+    [TokenType.AMPERSAND]: [___, ___, ___o],
+    [TokenType.TILDE]: [___, ___, ___o],
+
+    [TokenType.MINUS_MINUS]: [___, ___, ___o],
+    [TokenType.PLUS_PLUS]: [___, ___, ___o],
+    [TokenType.PERCENT]: [___, ___, ___o],
+    [TokenType.EQUAL]: [___, ___, ___o],
+    [TokenType.EQUAL_EQUAL]: [___, ___, ___o],
+    [TokenType.BANG_EQUAL]: [___, ___, ___o],
+    [TokenType.LESS]: [___, ___, ___o],
+    [TokenType.GREATER]: [___, ___, ___o],
+    [TokenType.LESS_EQUAL]: [___, ___, ___o],
+    [TokenType.GREATER_EQUAL]: [___, ___, ___o],
+    [TokenType.AND]: [___, ___, ___o],
+    [TokenType.OR]: [___, ___, ___o],
+    [TokenType.NOT]: [___, ___, ___o],
+    [TokenType.REM]: [___, ___, ___o],
+    [TokenType.MOD]: [___, ___, ___o],
+    [TokenType.DIV]: [___, ___, ___o],
+    [TokenType.NOR]: [___, ___, ___o],
+    [TokenType.XOR]: [___, ___, ___o],
+    [TokenType.XNOR]: [___, ___, ___o],
+    [TokenType.NAND]: [___, ___, ___o],
+
+    [TokenType.SCIENTIFIC_NUMBER]: [___, ___, ___o],
+    [TokenType.STRING]: [___, ___, ___o],
+    [TokenType.CLASS]: [___, ___, ___o],
+    [TokenType.IF]: [___, ___, ___o],
+    [TokenType.ELSE]: [___, ___, ___o],
+    [TokenType.TRUE]: [___, ___, ___o],
+    [TokenType.FALSE]: [___, ___, ___o],
+    [TokenType.FOR]: [___, ___, ___o],
+    [TokenType.FN]: [___, ___, ___o],
+    [TokenType.NIL]: [___, ___, ___o],
+    [TokenType.PRINT]: [___, ___, ___o],
+    [TokenType.RETURN]: [___, ___, ___o],
+    [TokenType.SUPER]: [___, ___, ___o],
+    [TokenType.THIS]: [___, ___, ___o],
+    [TokenType.WHILE]: [___, ___, ___o],
+    [TokenType.NUMERIC_CONSTANT]: [___, ___, ___o],
+    [TokenType.LET]: [___, ___, ___o],
+    [TokenType.VAR]: [___, ___, ___o],
+    [TokenType.ERROR]: [___, ___, ___o],
+    [TokenType.EMPTY]: [___, ___, ___o],
+    [TokenType.END]: [___, ___, ___o],
+  };
+  /**
+   * Returns the prefix rule associated
+   * with the given token type.
+   */
+  const prefixRule = (type: TokenType): ParseRule<MathExpression> => (
+    rules[type][0]
+  );
+
+  /**
+   * Returns the infix rule associated
+   * with the given token type.
+   */
+  const infixRule = (type: TokenType): ParseRule<MathExpression> => (
+    rules[type][1]
+  );
+
+  /**
+   * Returns the precedence of the given
+   * token type.
+   */
+  const precOf = (type: TokenType): BP => (
+    rules[type][2]
+  );
+
+  /**
+   * Performs a Pratt parsing for an
+   * expression.
+   */
+  const expr = (minBP: BP = BP.LOWEST) => {
+    let token = state.next();
+    const prefix = prefixRule(token.$type);
+    let lhs = prefix(token, dne());
+    if (lhs.isLeft()) {
+      return lhs;
+    }
+    while (minBP < precOf(state.$peek.$type)) {
+      if (state.atEnd()) {
+        break;
+      }
+      token = state.next();
+      const infix = infixRule(token.$type);
+      const rhs = infix(token, lhs.unwrap());
+      if (rhs.isLeft()) {
+        return rhs;
+      }
+      lhs = rhs;
+    }
+    return lhs;
+  };
+  const run = () => {
+    if (state.$error !== null) {
+      return left(state.$error);
+    } else {
+      return expr();
+    }
+  };
+  return run();
+}
+const j = exp(`3*(x^2) - 5`);
+print(treed(j));

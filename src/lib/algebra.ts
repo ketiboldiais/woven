@@ -98,3 +98,47 @@ const power = (
   exponent: MathExpression,
 ) => (new Power(base, exponent));
 
+/** An object corresponding to a difference expression. */
+class Difference extends Compound {
+  $args: [MathExpression, MathExpression];
+  constructor(left: MathExpression, right: MathExpression) {
+    super("-", [left, right]);
+    this.$args = [left, right];
+  }
+}
+
+/** Returns the difference expression `left - right`. */
+const diff = (left: MathExpression, right: MathExpression) => (
+  new Difference(left, right)
+);
+
+/** Returns the negation of the given expression. */
+const neg = (expression: MathExpression) => (
+  product([int(-1), expression])
+);
+
+/** An object corresponding to a quotient. */
+class Quotient extends Compound {
+  $args: [MathExpression, MathExpression];
+  constructor(a: MathExpression, b: MathExpression) {
+    super("/", [a, b]);
+    this.$args = [a, b];
+  }
+}
+
+/** Returns a new quotient expression. */
+const quotient = (a: MathExpression, b: MathExpression) => (
+  new Quotient(a, b)
+);
+
+/** An object corresponding to a factorial. */
+class Factorial extends Compound {
+  $args: [MathExpression];
+  constructor(arg: MathExpression) {
+    super("!", [arg]);
+    this.$args = [arg];
+  }
+}
+
+/** Returns a new factorial expression. */
+const factorial = (arg:MathExpression) => (new Factorial(arg));

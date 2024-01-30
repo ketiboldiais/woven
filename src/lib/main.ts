@@ -71,6 +71,18 @@ const rem = (a: number, b: number) => (a % b);
 /** Returns `a mod b` (the unsigned remainder).  */
 const mod = (a: number, b: number) => ((a % b) + b) % b;
 
+/** Returns the greatest common denominator of `a` and `b`. */
+const gcd = (a: number, b: number) => {
+  let A = floor(a);
+  let B = floor(b);
+  while (B !== 0) {
+    let R = mod(A, B);
+    A = B;
+    B = R;
+  }
+  return abs(A);
+};
+
 // § Tree Printer ==============================================================
 /**
  * In later sections, it will be useful to print
@@ -4957,6 +4969,7 @@ type ExpressionType =
   | "rational"
   | "dne"
   | RelationOp
+  | `fn-${string}`
   | AlgebraicOp;
 
 interface ExprVisitor<T> {
@@ -4978,19 +4991,19 @@ interface ExprVisitor<T> {
 /** An object corresponding to a mathematical expression. */
 abstract class MathExpression {
   /** The parenthesis level of this expression. */
-  parenLevel: number = 0;
+  $parenLevel: number = 0;
   parend() {
-    this.parenLevel++;
+    this.$parenLevel++;
     return this;
   }
   /** Sets the parenthesis level of this expression to the provided level. */
   toParenLevel(level: number) {
-    this.parenLevel = level;
+    this.$parenLevel = level;
     return this;
   }
   /** Sets the parenthesis level of this expression to 0. */
   unParen() {
-    this.parenLevel = 0;
+    this.$parenLevel = 0;
     return this;
   }
   /**
@@ -5130,9 +5143,11 @@ abstract class Compound extends MathExpression {
 /** An object corresponding to a relational expression. */
 class Relation extends Compound {
   $args: [MathExpression, MathExpression];
-  constructor(op: string, left: MathExpression, right: MathExpression) {
+  $op: RelationOp;
+  constructor(op: RelationOp, left: MathExpression, right: MathExpression) {
     super(op, [left, right]);
     this.$args = [left, right];
+    this.$op = op;
   }
   isAlgebraic(): this is AlgebraicExpression {
     return false;
@@ -5143,7 +5158,11 @@ class Relation extends Compound {
 }
 
 /** Returns a new relational expression. */
-const relation = (op: string, left: MathExpression, right: MathExpression) => (
+const relation = (
+  op: RelationOp,
+  left: MathExpression,
+  right: MathExpression,
+) => (
   new Relation(op, left, right)
 );
 
@@ -5154,6 +5173,7 @@ const relation = (op: string, left: MathExpression, right: MathExpression) => (
  */
 class Sum extends Compound {
   $args: AlgebraicExpression[];
+  $op: "+" = "+";
   constructor(args: AlgebraicExpression[]) {
     super("+", args);
     this.$args = args;
@@ -5181,6 +5201,7 @@ const isSum = (obj: any): obj is Sum => (obj instanceof Sum);
  */
 class Product extends Compound {
   $args: AlgebraicExpression[];
+  $op: "*" = "*";
   constructor(args: AlgebraicExpression[]) {
     super("*", args);
 
@@ -5208,6 +5229,7 @@ const isProduct = (obj: any): obj is Product => (obj instanceof Product);
  */
 class Power extends Compound {
   $args: [AlgebraicExpression, AlgebraicExpression];
+  $op: "^" = "^";
   constructor(base: AlgebraicExpression, exponent: AlgebraicExpression) {
     super("^", [base, exponent]);
     this.$args = [base, exponent];
@@ -5229,6 +5251,7 @@ const power = (
 /** An object corresponding to a difference expression. */
 class Difference extends Compound {
   $args: [AlgebraicExpression, AlgebraicExpression];
+  $op: "-" = "-";
   constructor(left: AlgebraicExpression, right: AlgebraicExpression) {
     super("-", [left, right]);
     this.$args = [left, right];
@@ -5254,6 +5277,7 @@ const neg = (expression: AlgebraicExpression) => (
 /** An object corresponding to a quotient. */
 class Quotient extends Compound {
   $args: [AlgebraicExpression, AlgebraicExpression];
+  $op: "/" = "/";
   constructor(a: AlgebraicExpression, b: AlgebraicExpression) {
     super("/", [a, b]);
     this.$args = [a, b];
@@ -5274,6 +5298,7 @@ const quotient = (a: AlgebraicExpression, b: AlgebraicExpression) => (
 /** An object corresponding to a factorial. */
 class Factorial extends Compound {
   $args: [AlgebraicExpression];
+  $op: "!" = "!";
   constructor(arg: AlgebraicExpression) {
     super("!", [arg]);
     this.$args = [arg];
@@ -5702,6 +5727,102 @@ function exp(code: string) {
   return run();
 }
 
-const j = exp(`cos(-x) + sin(x)`);
+class Kind implements ExprVisitor<ExpressionType> {
+  int(expr: Int): ExpressionType {
+    return "integer";
+  }
+  rational(expr: Rational): ExpressionType {
+    return "rational";
+  }
+  sym(expr: Sym): ExpressionType {
+    return "symbol";
+  }
+  dne(expr: DNE): ExpressionType {
+    return "dne";
+  }
+  real(expr: Real): ExpressionType {
+    return "real";
+  }
+  relation(expr: Relation): ExpressionType {
+    return expr.$op;
+  }
+  sum(expr: Sum): ExpressionType {
+    return expr.$op;
+  }
+  product(expr: Product): ExpressionType {
+    return expr.$op;
+  }
+  power(expr: Power): ExpressionType {
+    return expr.$op;
+  }
+  difference(expr: Difference): ExpressionType {
+    return expr.$op;
+  }
+  quotient(expr: Quotient): ExpressionType {
+    return expr.$op;
+  }
+  factorial(expr: Factorial): ExpressionType {
+    return expr.$op;
+  }
+  algebraicFn(expr: AlgebraicFn): ExpressionType {
+    return `fn-${expr.$op}`;
+  }
+}
+const $KIND = new Kind();
+const kind = (expr: MathExpression) => (
+  expr.accept($KIND)
+);
 
-print(treed(j));
+class NOPS implements ExprVisitor<number> {
+  int(expr: Int): number {
+    return 0;
+  }
+  rational(expr: Rational): number {
+    return 0;
+  }
+  sym(expr: Sym): number {
+    return 0;
+  }
+  dne(expr: DNE): number {
+    return 0;
+  }
+  real(expr: Real): number {
+    return 0;
+  }
+  relation(expr: Relation): number {
+    return expr.$args.length;
+  }
+  sum(expr: Sum): number {
+    return expr.$args.length;
+  }
+  product(expr: Product): number {
+    return expr.$args.length;
+  }
+  power(expr: Power): number {
+    return expr.$args.length;
+  }
+  difference(expr: Difference): number {
+    return expr.$args.length;
+  }
+  quotient(expr: Quotient): number {
+    return expr.$args.length;
+  }
+  factorial(expr: Factorial): number {
+    return expr.$args.length;
+  }
+  algebraicFn(expr: AlgebraicFn): number {
+    return expr.$args.length;
+  }
+}
+const $NOPS = new NOPS();
+
+/** Returns the number of operands of the given expression. */
+const nops = (expr: MathExpression) => (
+  expr.accept($NOPS)
+);
+
+
+
+const j = exp(`1|2 + 1|3`);
+const k = j.map((x) => kind(x));
+print(treed(k));

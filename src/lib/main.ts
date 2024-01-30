@@ -4948,14 +4948,22 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
   };
 };
 
+type RelationOp = "<" | ">" | "=" | "!=" | "<=" | ">=";
+type AlgebraicOp = "+" | "-" | "/" | "*" | "!" | "^";
+type ExpressionType =
+  | "symbol"
+  | "integer"
+  | "real"
+  | "rational"
+  | "dne"
+  | RelationOp
+  | AlgebraicOp;
+
 interface ExprVisitor<T> {
-  parenthesizedExpression<X extends MathExpression>(
-    expr: ParenthesizedExpression<X>,
-  ): T;
   int(expr: Int): T;
   rational(expr: Rational): T;
   sym(expr: Sym): T;
-  dne(expr: Undefined): T;
+  dne(expr: DNE): T;
   real(expr: Real): T;
   relation(expr: Relation): T;
   sum(expr: Sum): T;
@@ -4969,6 +4977,22 @@ interface ExprVisitor<T> {
 
 /** An object corresponding to a mathematical expression. */
 abstract class MathExpression {
+  /** The parenthesis level of this expression. */
+  parenLevel: number = 0;
+  parend() {
+    this.parenLevel++;
+    return this;
+  }
+  /** Sets the parenthesis level of this expression to the provided level. */
+  toParenLevel(level: number) {
+    this.parenLevel = level;
+    return this;
+  }
+  /** Sets the parenthesis level of this expression to 0. */
+  unParen() {
+    this.parenLevel = 0;
+    return this;
+  }
   /**
    * Returns true if this expression is an algebraic
    * expression, false otherwise.
@@ -4988,26 +5012,7 @@ type AlgebraicExpression =
   | Difference
   | Quotient
   | Factorial
-  | ParenthesizedExpression<AlgebraicExpression>
   | AlgebraicFn;
-
-class ParenthesizedExpression<T extends MathExpression> extends MathExpression {
-  $inner: T;
-  constructor(inner: T) {
-    super();
-    this.$inner = inner;
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return this.$inner.isAlgebraic();
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.parenthesizedExpression(this);
-  }
-}
-
-const parend = <T extends MathExpression>(expression: T) => (
-  new ParenthesizedExpression(expression)
-);
 
 /** An object corresponding to an integer. */
 class Int extends Atom {
@@ -5070,7 +5075,12 @@ const isSym = (x: any): x is Sym => (
   x instanceof Sym
 );
 
-class Undefined extends Atom {
+/**
+ * An object corresponding to "Does Not Exist."
+ * At runtime, this is equivalent to the JavaScript
+ * "undefined".
+ */
+class DNE extends Atom {
   constructor() {
     super();
   }
@@ -5081,7 +5091,7 @@ class Undefined extends Atom {
     return visitor.dne(this);
   }
 }
-const dne = () => (new Undefined());
+const dne = () => (new DNE());
 
 /** An object corresponding to a real number. */
 class Real extends Atom {
@@ -5537,7 +5547,7 @@ function exp(code: string) {
         `parsing a parenthesized expression`,
       );
     }
-    return state.expr(parend(inner.unwrap()));
+    return state.expr(inner.unwrap().parend());
   };
 
   /**

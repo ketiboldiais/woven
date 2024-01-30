@@ -4948,6 +4948,25 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
   };
 };
 
+interface ExprVisitor<T> {
+  parenthesizedExpression<X extends MathExpression>(
+    expr: ParenthesizedExpression<X>,
+  ): T;
+  int(expr: Int): T;
+  rational(expr: Rational): T;
+  sym(expr: Sym): T;
+  dne(expr: Undefined): T;
+  real(expr: Real): T;
+  relation(expr: Relation): T;
+  sum(expr: Sum): T;
+  product(expr: Product): T;
+  power(expr: Power): T;
+  difference(expr: Difference): T;
+  quotient(expr: Quotient): T;
+  factorial(expr: Factorial): T;
+  algebraicFn(expr: AlgebraicFn): T;
+}
+
 /** An object corresponding to a mathematical expression. */
 abstract class MathExpression {
   /**
@@ -4955,6 +4974,7 @@ abstract class MathExpression {
    * expression, false otherwise.
    */
   abstract isAlgebraic(): this is AlgebraicExpression;
+  abstract accept<T>(visitor: ExprVisitor<T>): T;
 }
 
 /** An object corresponding to an atomic expression. */
@@ -4980,6 +5000,9 @@ class ParenthesizedExpression<T extends MathExpression> extends MathExpression {
   isAlgebraic(): this is AlgebraicExpression {
     return this.$inner.isAlgebraic();
   }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.parenthesizedExpression(this);
+  }
 }
 
 const parend = <T extends MathExpression>(expression: T) => (
@@ -4995,6 +5018,9 @@ class Int extends Atom {
   }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.int(this);
   }
 }
 
@@ -5013,6 +5039,9 @@ class Rational extends Atom {
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.rational(this);
+  }
 }
 
 /** Returns a new rational. */
@@ -5030,10 +5059,16 @@ class Sym extends Atom {
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.sym(this);
+  }
 }
 
 /** Returns a new symbol. */
 const sym = (symbol: string) => (new Sym(symbol));
+const isSym = (x: any): x is Sym => (
+  x instanceof Sym
+);
 
 class Undefined extends Atom {
   constructor() {
@@ -5041,6 +5076,9 @@ class Undefined extends Atom {
   }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.dne(this);
   }
 }
 const dne = () => (new Undefined());
@@ -5054,6 +5092,9 @@ class Real extends Atom {
   }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.real(this);
   }
 }
 
@@ -5086,6 +5127,9 @@ class Relation extends Compound {
   isAlgebraic(): this is AlgebraicExpression {
     return false;
   }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.relation(this);
+  }
 }
 
 /** Returns a new relational expression. */
@@ -5106,6 +5150,9 @@ class Sum extends Compound {
   }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.sum(this);
   }
 }
 
@@ -5132,6 +5179,9 @@ class Product extends Compound {
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.product(this);
+  }
 }
 
 /** Returns a new product expression. */
@@ -5155,6 +5205,9 @@ class Power extends Compound {
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.power(this);
+  }
 }
 
 /** Returns a new power expression. */
@@ -5172,6 +5225,9 @@ class Difference extends Compound {
   }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.difference(this);
   }
 }
 
@@ -5195,6 +5251,9 @@ class Quotient extends Compound {
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.quotient(this);
+  }
 }
 
 /** Returns a new quotient expression. */
@@ -5212,6 +5271,9 @@ class Factorial extends Compound {
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.factorial(this);
+  }
 }
 
 /** Returns a new factorial expression. */
@@ -5226,6 +5288,9 @@ class AlgebraicFn extends Compound {
   }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.algebraicFn(this);
   }
 }
 
@@ -5277,6 +5342,22 @@ function exp(code: string) {
       const literal = op.$literal;
       return state.expr(rat(literal.$n, literal.$d));
     }
+  };
+
+  const negation: ParseRule<MathExpression> = (op) => {
+    const p = precOf(op.$type);
+    const e = expr(p);
+    if (e.isLeft()) {
+      return e;
+    }
+    const arg = e.unwrap();
+    if (!arg.isAlgebraic()) {
+      return state.error(
+        `The unary '-' may only be used with algebraic expressions`,
+        `parsing a negation`,
+      );
+    }
+    return state.expr(neg(arg));
   };
 
   const diffExpr: ParseRule<MathExpression> = (op, left) => {
@@ -5349,13 +5430,13 @@ function exp(code: string) {
     if (!arg.isAlgebraic()) {
       return state.error(
         `Only algebraic expressions may be used with '!'`,
-        `parsing a factorial`
-      )
+        `parsing a factorial`,
+      );
     }
     const out = factorial(arg);
     return state.expr(out);
-  }
-  
+  };
+
   const productExpr: ParseRule<MathExpression> = (op, left) => {
     const rhs = expr(precOf(op.$type));
     if (rhs.isLeft()) {
@@ -5409,7 +5490,43 @@ function exp(code: string) {
     return state.expr(out);
   };
 
-  const primary: ParseRule<MathExpression> = (lparen) => {
+  const callExpr: ParseRule<MathExpression> = (op, lastNode) => {
+    const callee = lastNode;
+    if (!isSym(callee)) {
+      return state.error(
+        `Expected a symbol for a function name`,
+        `parsing a call expression`,
+      );
+    }
+    const args: AlgebraicExpression[] = [];
+    if (!state.check(TokenType.RIGHT_PAREN)) {
+      do {
+        const e = expr();
+        if (e.isLeft()) {
+          return e;
+        }
+        const element = e.unwrap();
+        if (!element.isAlgebraic()) {
+          return state.error(
+            `Only algebraic expressions may be passed to calls`,
+            `parsing a call expression`,
+          );
+        }
+        args.push(element);
+      } while (state.nextIs(TokenType.COMMA));
+    }
+
+    if (!state.nextIs(TokenType.RIGHT_PAREN)) {
+      return state.error(
+        `Expected a “)” to close the arguments`,
+        `parsing a function call`,
+      );
+    }
+    const out = fun(callee.$s, args);
+    return state.expr(out);
+  };
+
+  const primary: ParseRule<MathExpression> = () => {
     const inner = expr();
     if (inner.isLeft()) {
       return inner;
@@ -5449,11 +5566,11 @@ function exp(code: string) {
   };
   const rules: ParseRuleTable<MathExpression> = {
     [TokenType.PLUS]: [___, sumExpr, BP.SUM],
-    [TokenType.MINUS]: [___, diffExpr, BP.DIFFERENCE],
+    [TokenType.MINUS]: [negation, diffExpr, BP.DIFFERENCE],
     [TokenType.SLASH]: [___, quotientExpr, BP.QUOTIENT],
     [TokenType.STAR]: [___, productExpr, BP.PRODUCT],
     [TokenType.CARET]: [___, powerExpr, BP.POWER],
-    [TokenType.LEFT_PAREN]: [primary, ___, BP.CALL],
+    [TokenType.LEFT_PAREN]: [primary, callExpr, BP.CALL],
     [TokenType.RIGHT_PAREN]: [___, ___, ___o],
     [TokenType.IDENTIFIER]: [symbol, ___, BP.LITERAL],
     [TokenType.INT]: [integer, ___, BP.LITERAL],
@@ -5574,5 +5691,7 @@ function exp(code: string) {
   };
   return run();
 }
-const j = exp(`3*(x^2) - 5`);
+
+const j = exp(`cos(-x) + sin(x)`);
+
 print(treed(j));

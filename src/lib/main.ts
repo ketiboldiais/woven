@@ -71,6 +71,9 @@ const rem = (a: number, b: number) => (a % b);
 /** Returns `a mod b` (the unsigned remainder).  */
 const mod = (a: number, b: number) => ((a % b) + b) % b;
 
+/** Returns the integer quotient of a/b. */
+const iquot = (a: number, b: number) => floor(a / b);
+
 /** Returns the greatest common denominator of `a` and `b`. */
 const gcd = (a: number, b: number) => {
   let A = floor(a);
@@ -5821,8 +5824,101 @@ const nops = (expr: MathExpression) => (
   expr.accept($NOPS)
 );
 
+class OPERAND_AT implements ExprVisitor<MathExpression> {
+  $index: number;
+  constructor(index: number) {
+    this.$index = index - 1;
+  }
+  int(expr: Int): MathExpression {
+    return dne();
+  }
+  rational(expr: Rational): MathExpression {
+    return dne();
+  }
+  sym(expr: Sym): MathExpression {
+    return dne();
+  }
+  dne(expr: DNE): MathExpression {
+    return dne();
+  }
+  real(expr: Real): MathExpression {
+    return dne();
+  }
+  private argAt(expr: Compound) {
+    const out = expr.$args[this.$index];
+    if (out === undefined) {
+      return dne();
+    } else {
+      return out;
+    }
+  }
+  relation(expr: Relation): MathExpression {
+    return this.argAt(expr);
+  }
+  sum(expr: Sum): MathExpression {
+    return this.argAt(expr);
+  }
+  product(expr: Product): MathExpression {
+    return this.argAt(expr);
+  }
+  power(expr: Power): MathExpression {
+    return this.argAt(expr);
+  }
+  difference(expr: Difference): MathExpression {
+    return this.argAt(expr);
+  }
+  quotient(expr: Quotient): MathExpression {
+    return this.argAt(expr);
+  }
+  factorial(expr: Factorial): MathExpression {
+    return this.argAt(expr);
+  }
+  algebraicFn(expr: AlgebraicFn): MathExpression {
+    return this.argAt(expr);
+  }
+}
+const operand = (expr: MathExpression, index: number) => (
+  expr.accept(new OPERAND_AT(index))
+);
 
+const algebraError = (message: string, phase: string) => (
+  runtimeError(message, phase, -1, -1)
+);
 
-const j = exp(`1|2 + 1|3`);
-const k = j.map((x) => kind(x));
+/**
+ * Simplifies a rational number.
+ */
+const simplifyRationalNumber = (
+  u: MathExpression,
+): Either<Err, (Int | Rational)> => {
+  if (kind(u) === "integer") {
+    return right(u as Int);
+  } else if (kind(u) === "rational") {
+    let n = (u as Rational).$n;
+    let d = (u as Rational).$d;
+    if (mod(n, d) === 0) {
+      return right(int(iquot(n, d)));
+    } else {
+      let g = gcd(n, d);
+      if (d > 0) {
+        return right(rat(iquot(n, g), iquot(d, g)));
+      } else if (d < 0) {
+        return right(rat(iquot(-n, g), iquot(-d, g)));
+      } else {
+        return left(algebraError(
+          `Encountered a 0 denominator`,
+          `simplifying a rational number`,
+        ));
+      }
+    }
+  } else {
+    return left(algebraError(
+      `Argument to simplifyRationalNumber is neither a rational nor an int`,
+      `simplifying a rational number`,
+    ));
+  }
+};
+
+const j = exp(`2|4`);
+const k = j.chain((x) => simplifyRationalNumber(x));
 print(treed(k));

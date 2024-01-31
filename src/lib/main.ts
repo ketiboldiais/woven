@@ -6151,7 +6151,7 @@ const simplifyRationalNumber = (
  */
 const numerOf = (
   expression: Rational | Int,
-): Either<AlgebraError, (Rational | Int)> => {
+): Either<AlgebraError, Int> => {
   if (kind(expression) === "integer") {
     return right(int((expression as Int).$n));
   } else if (kind(expression) === "rational") {
@@ -6169,7 +6169,7 @@ const numerOf = (
  */
 const denomOf = (
   expression: Rational | Int,
-): Either<AlgebraError, (Rational | Int)> => {
+): Either<AlgebraError, Int> => {
   if (kind(expression) === "integer") {
     return right(int(1));
   } else if (kind(expression) === "rational") {
@@ -6182,6 +6182,52 @@ const denomOf = (
   }
 };
 
+
+/**
+ * Returns the rational product v * w.
+ */
+const ratProd = (v: Rational | Int, w: Rational | Int) => {
+  const nv = numerOf(v);
+  const dv = denomOf(v);
+  const nw = numerOf(w);
+  const dw = denomOf(w);
+  return nv.chain((NV) =>
+    dv.chain((DV) =>
+      nw.chain((NW) =>
+        dw.chain((DW) =>
+          right(rat(
+            NV.$n * NW.$n,
+            DV.$n * DW.$n,
+          ))
+        )
+      )
+    )
+  );
+};
+
+/**
+ * Returns the rational quotient v/w.
+ */
+const ratQuot = (v: Rational | Int, w: Rational | Int) => {
+  const nv = numerOf(v);
+  const dv = denomOf(v);
+  const nw = numerOf(w);
+  const dw = denomOf(w);
+  return nv.chain((NV) =>
+    dv.chain((DV) =>
+      nw.chain((NW) =>
+        dw.chain((DW) =>
+          right(rat(
+            NV.$n * DW.$n,
+            NW.$n * DV.$n,
+          ))
+        )
+      )
+    )
+  );
+};
+
 const j = exp(`(2 + 5) * (3 + 8)`);
+// const m = ratQuot(rat(1,2), rat(3,4));
 const k = j.map((x) => x.toString());
 print(treed(k));

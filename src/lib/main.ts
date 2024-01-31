@@ -6182,6 +6182,49 @@ const denomOf = (
   }
 };
 
+/**
+ * Returns the rational difference v - w.
+ */
+const ratDiff = (v: Rational | Int, w: Rational | Int) => {
+  const nv = numerOf(v);
+  const dv = denomOf(v);
+  const nw = numerOf(w);
+  const dw = denomOf(w);
+  return nv.chain((NV) =>
+    dv.chain((DV) =>
+      nw.chain((NW) =>
+        dw.chain((DW) =>
+          right(rat(
+            (NV.$n * DW.$n) - (NW.$n * DV.$n),
+            DV.$n * DW.$n,
+          ))
+        )
+      )
+    )
+  );
+};
+
+/**
+ * Returns the rational sum v + w.
+ */
+const ratSum = (v: Rational | Int, w: Rational | Int) => {
+  const nv = numerOf(v);
+  const dv = denomOf(v);
+  const nw = numerOf(w);
+  const dw = denomOf(w);
+  return nv.chain((NV) =>
+    dv.chain((DV) =>
+      nw.chain((NW) =>
+        dw.chain((DW) =>
+          right(rat(
+            (NV.$n * DW.$n) + (NW.$n * DV.$n),
+            DV.$n * DW.$n,
+          ))
+        )
+      )
+    )
+  );
+};
 
 /**
  * Returns the rational product v * w.
@@ -6227,7 +6270,169 @@ const ratQuot = (v: Rational | Int, w: Rational | Int) => {
   );
 };
 
-const j = exp(`(2 + 5) * (3 + 8)`);
-// const m = ratQuot(rat(1,2), rat(3,4));
-const k = j.map((x) => x.toString());
+/**
+ * This function evaluates a rational power `(a/b)^n`,
+ * where `n` is an integer.
+ */
+const ratPow = (
+  v: Rational | Int,
+  n: Int,
+): Either<AlgebraError, (Rational | Int)> => {
+  return numerOf(v).chain((numeratorV) => {
+    if (numeratorV.$n !== 0) {
+      if (n.$n > 0) {
+        return ratPow(v, int(n.$n - 1)).chain((s) => ratProd(s, v));
+      } else if (n.$n === 0) {
+        return right(int(1));
+      } else if (n.$n === -1) {
+        return numerOf(v).chain((nv) => ratQuot(v, nv));
+      } else if (n.$n < -1) {
+        return numerOf(v).chain((nv) => ratQuot(v, nv)).chain((s) =>
+          ratPow(s, int(-n.$n))
+        );
+      } else {
+        return left(algebraError(
+          `Unknown case: ${n.$n}`,
+          `call:ratPow`,
+        ));
+      }
+    } else {
+      if (n.$n >= 1) {
+        return right(int(0));
+      } else {
+        return left(algebraError(
+          `Integer powers must be greater than or equal to 1`,
+          `call:ratPow`,
+        ));
+      }
+    }
+  });
+};
+
+const rneRec = (
+  u: MathExpression,
+): Either<AlgebraError, (Int | Rational)> => {
+  if (kind(u) === "integer") {
+    return right(u as Int);
+  } else if (kind(u) === "rational") {
+    return denomOf(u as Rational).chain((d) => {
+      if (d.$n === 0) {
+        return left(algebraError(
+          `Division by 0 encountered.`,
+          `rneRec`,
+        ));
+      } else {
+        return right(u as Rational);
+      }
+    });
+  } else if (nops(u) === 1) {
+    return rneRec(operand(u, 1)).chain((v) => {
+      if (kind(v) === "+") {
+        return right(v);
+      } else if (kind(v) === "-") {
+        return ratProd(int(-1), v);
+      } else {
+        return left(algebraError(
+          `Received a unary RNE, but the operator is neither '+' nor '-'`,
+          `call:rneREC`,
+        ));
+      }
+    });
+  } else if (nops(u) === 2) {
+    if (
+      (kind(u) === "+") ||
+      (kind(u) === "*") ||
+      (kind(u) === "-") ||
+      (kind(u) === "/")
+    ) {
+      return rneRec(operand(u, 1)).chain((v) =>
+        rneRec(operand(u, 2)).chain((w) => {
+          if (kind(u) === "+") {
+            return ratSum(v, w);
+          } else if (kind(u) === "-") {
+            return ratDiff(v, w);
+          } else if (kind(u) === "*") {
+            return ratProd(v, w);
+          } else {
+            return ratQuot(v, w);
+          }
+        })
+      );
+    } else if (kind(u) === "^") {
+      return rneRec(operand(u, 1)).chain((v) => {
+        const w = operand(u, 2);
+        if (kind(w) === "integer") {
+          return ratPow(v, w as Int);
+        } else {
+          return left(algebraError(
+            `Non-integer exponent passed`,
+            `call:rneREC`,
+          ));
+        }
+      });
+    } else {
+      return left(algebraError(
+        `${u.toString()} is not an RNE.`,
+        `call:rneREC`,
+      ));
+    }
+  } else {
+    return left(algebraError(
+      `${u.toString()} is not an RNE.`,
+      `call:rneREC`,
+    ));
+  }
+};
+
+/**
+ * This function returns true if the given mathematical
+ * expression is a rational number expression.
+ */
+const isRNE = (u: MathExpression): boolean => {
+  const k = kind(u);
+  return (
+    // RNE 1 : u is an integer
+    k === "integer" ||
+    // RNE 2 : u is a rational
+    k === "rational" ||
+    // RNE 3: u is a unary or binary sum with operands that are RNEs
+    (kind(u) === "+") && (
+        ((u as Sum).$args.length === 2) ||
+        ((u as Sum).$args.length === 1)
+      ) &&
+      ((u as Sum).$args.reduce((p, c) => p && isRNE(c), true)) ||
+    // RNE 4: u is a unary or binary difference with operands that are RNEs
+    // - Differences always have a length of 2.
+    (kind(u) === "-") &&
+      ((u as Difference).$args.reduce((p, c) => p && isRNE(c), true)) ||
+    // RNE 5 : u is a binary product with operands that are RNEs
+
+    (kind(u) === "*") && (
+        (u as Product).$args.length === 2
+      ) &&
+      ((u as Product).$args.reduce((p, c) => p && isRNE(c), true)) ||
+    // RNE 6 : u is a quotient with operands that are RNEs
+
+    (kind(u) === "/") &&
+      ((u as Quotient).$args.reduce((p, c) => p && isRNE(c), true)) ||
+    // RNE 7 : u is a power with a base that is an RNE and an exponent that is an integer
+
+    (kind(u) === "^") && isRNE((u as Power).left()) &&
+      (kind((u as Power).right()) === "integer")
+  );
+};
+
+const rne = (u: MathExpression) => {
+  if (!isRNE(u)) {
+    return left(algebraError(
+      `Non-RNE passed to rne`,
+      `call:rne`,
+    ));
+  } else {
+    return rneRec(u).chain((v) => simplifyRationalNumber(v));
+  }
+};
+
+const j = exp(`2 * (1|2 + 1|3)`);
+const k = j.map((x) => rne(x));
 print(treed(k));

@@ -71,6 +71,14 @@ const rem = (a: number, b: number) => (a % b);
 /** Returns `a mod b` (the unsigned remainder).  */
 const mod = (a: number, b: number) => ((a % b) + b) % b;
 
+/** Returns true if the given number is even. */
+const isEven = (n: number) => (
+  (n % 2) === 0
+);
+
+/** Returns true if the given number is odd. */
+const isOdd = (n: number) => (!isEven(n));
+
 /** Returns the integer quotient of a/b. */
 const iquot = (a: number, b: number) => floor(a / b);
 
@@ -876,6 +884,27 @@ class Err extends Error {
     return out;
   }
 }
+
+/**
+ * An object corresponding to an error occurring
+ * during the algebraic runtime.
+ */
+class AlgebraError extends Err {
+  $errors: [string, string][];
+  constructor(message: string, phase: string) {
+    super(message, "runtime-error", phase, -1, -1);
+    this.$errors = [[message, phase]];
+  }
+  addError(message: string, phase: string) {
+    this.$errors.push([message, phase]);
+    return this;
+  }
+}
+
+/** Returns a new algebra error. */
+const algebraError = (message: string, phase: string) => (
+  new AlgebraError(message, phase)
+);
 
 // To avoid having to write `new` all the time,
 // we will define an error factory function.
@@ -5014,6 +5043,7 @@ abstract class MathExpression {
    * expression, false otherwise.
    */
   abstract isAlgebraic(): this is AlgebraicExpression;
+  abstract toString(): string;
   abstract accept<T>(visitor: ExprVisitor<T>): T;
 }
 
@@ -5037,6 +5067,9 @@ class Int extends Atom {
     super();
     this.$n = floor(value);
   }
+  toString(): string {
+    return `${this.$n}`;
+  }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
@@ -5057,6 +5090,9 @@ class Rational extends Atom {
     this.$n = floor(n);
     this.$d = floor(d);
   }
+  toString(): string {
+    return `${this.$n}|${this.$d}`;
+  }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
@@ -5076,6 +5112,9 @@ class Sym extends Atom {
   constructor(symbol: string) {
     super();
     this.$s = symbol;
+  }
+  toString(): string {
+    return this.$s;
   }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
@@ -5100,6 +5139,9 @@ class DNE extends Atom {
   constructor() {
     super();
   }
+  toString(): string {
+    return `DNE`;
+  }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
@@ -5107,7 +5149,7 @@ class DNE extends Atom {
     return visitor.dne(this);
   }
 }
-const dne = () => (new DNE());
+const UNDEFINED = new DNE();
 
 /** An object corresponding to a real number. */
 class Real extends Atom {
@@ -5115,6 +5157,9 @@ class Real extends Atom {
   constructor(value: number) {
     super();
     this.$n = value;
+  }
+  toString(): string {
+    return `${this.$n}`;
   }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
@@ -5152,6 +5197,22 @@ class Relation extends Compound {
     this.$args = [left, right];
     this.$op = op;
   }
+  left() {
+    return this.$args[0];
+  }
+  right() {
+    return this.$args[1];
+  }
+  toString(): string {
+    const L = this.left().toString();
+    const R = this.right().toString();
+    const op = this.$op;
+    if (this.$parenLevel) {
+      return `(${L} ${op} ${R})`;
+    } else {
+      return `${L} ${op} ${R}`;
+    }
+  }
   isAlgebraic(): this is AlgebraicExpression {
     return false;
   }
@@ -5180,6 +5241,20 @@ class Sum extends Compound {
   constructor(args: AlgebraicExpression[]) {
     super("+", args);
     this.$args = args;
+  }
+  toString(): string {
+    let out = "";
+    for (let i = 0; i < this.$args.length; i++) {
+      out += this.$args[i].toString();
+      if (i !== this.$args.length - 1) {
+        out += " + ";
+      }
+    }
+    if (this.$parenLevel) {
+      return `(${out})`;
+    } else {
+      return out;
+    }
   }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
@@ -5210,6 +5285,20 @@ class Product extends Compound {
 
     this.$args = args;
   }
+  toString(): string {
+    let out = "";
+    for (let i = 0; i < this.$args.length; i++) {
+      out += this.$args[i].toString();
+      if (i !== this.$args.length - 1) {
+        out += " * ";
+      }
+    }
+    if (this.$parenLevel) {
+      return `(${out})`;
+    } else {
+      return out;
+    }
+  }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
@@ -5237,6 +5326,21 @@ class Power extends Compound {
     super("^", [base, exponent]);
     this.$args = [base, exponent];
   }
+  left() {
+    return this.$args[0];
+  }
+  right() {
+    return this.$args[1];
+  }
+  toString(): string {
+    const L = this.left().toString();
+    const R = this.right().toString();
+    if (this.$parenLevel) {
+      return `(${L}^${R})`;
+    } else {
+      return `${L}^${R}`;
+    }
+  }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
@@ -5258,6 +5362,21 @@ class Difference extends Compound {
   constructor(left: AlgebraicExpression, right: AlgebraicExpression) {
     super("-", [left, right]);
     this.$args = [left, right];
+  }
+  left() {
+    return this.$args[0];
+  }
+  right() {
+    return this.$args[1];
+  }
+  toString(): string {
+    const L = this.left().toString();
+    const R = this.right().toString();
+    if (this.$parenLevel) {
+      return `(${L} - ${R})`;
+    } else {
+      return `${L} - ${R}`;
+    }
   }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
@@ -5285,6 +5404,21 @@ class Quotient extends Compound {
     super("/", [a, b]);
     this.$args = [a, b];
   }
+  left() {
+    return this.$args[0];
+  }
+  right() {
+    return this.$args[1];
+  }
+  toString(): string {
+    const L = this.left().toString();
+    const R = this.right().toString();
+    if (this.$parenLevel) {
+      return `(${L}/${R})`;
+    } else {
+      return `${L}/${R}`;
+    }
+  }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
@@ -5306,6 +5440,17 @@ class Factorial extends Compound {
     super("!", [arg]);
     this.$args = [arg];
   }
+  arg() {
+    return this.$args[0];
+  }
+  toString(): string {
+    const arg = this.arg().toString();
+    if (this.$parenLevel) {
+      return `(${arg}!)`;
+    } else {
+      return `${arg}!`;
+    }
+  }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
   }
@@ -5323,6 +5468,22 @@ class AlgebraicFn extends Compound {
   constructor(functionName: string, args: AlgebraicExpression[]) {
     super(functionName, args);
     this.$args = args;
+  }
+  toString(): string {
+    const name = this.$op;
+    let out = `${name}(`;
+    for (let i = 0; i < this.$args.length; i++) {
+      out += this.$args[i].toString();
+      if (i !== this.$args.length - 1) {
+        out += ",";
+      }
+    }
+    out += ")";
+    if (this.$parenLevel) {
+      return `(${out})`;
+    } else {
+      return out;
+    }
   }
   isAlgebraic(): this is AlgebraicExpression {
     return true;
@@ -5747,7 +5908,7 @@ function exp(expression: string) {
   const expr = (minBP: BP = BP.LOWEST) => {
     let token = state.next();
     const prefix = prefixRule(token.$type);
-    let lhs = prefix(token, dne());
+    let lhs = prefix(token, UNDEFINED);
     if (lhs.isLeft()) {
       return lhs;
     }
@@ -5890,24 +6051,24 @@ class OPERAND_AT implements ExprVisitor<MathExpression> {
     this.$index = index - 1;
   }
   int(expr: Int): MathExpression {
-    return dne();
+    return UNDEFINED;
   }
   rational(expr: Rational): MathExpression {
-    return dne();
+    return UNDEFINED;
   }
   sym(expr: Sym): MathExpression {
-    return dne();
+    return UNDEFINED;
   }
   dne(expr: DNE): MathExpression {
-    return dne();
+    return UNDEFINED;
   }
   real(expr: Real): MathExpression {
-    return dne();
+    return UNDEFINED;
   }
   private argAt(expr: Compound) {
     const out = expr.$args[this.$index];
     if (out === undefined) {
-      return dne();
+      return UNDEFINED;
     } else {
       return out;
     }
@@ -5950,35 +6111,60 @@ const operand = (expression: MathExpression, ith: number) => (
 /**
  * This function simplifies a rational number. That is,
  * given a rational number `a/b`, returns `a/b`
- * in standard form (if an integer `n` is 
+ * in standard form (if an integer `n` is
  * provided, returns `n`, since `n = n/1`, and `n/1`
  * is in standard form).
  */
 const simplifyRationalNumber = (
   u: MathExpression,
-) => {
+): Either<AlgebraError, (Int | Rational)> => {
   if (kind(u) === "integer") {
-    return (u as Int);
+    return right(u as Int);
   } else if (kind(u) === "rational") {
     let n = (u as Rational).$n;
     let d = (u as Rational).$d;
     if (mod(n, d) === 0) {
-      return (int(iquot(n, d)));
+      return right(int(iquot(n, d)));
     } else {
       let g = gcd(n, d);
       if (d > 0) {
-        return (rat(iquot(n, g), iquot(d, g)));
+        return right(rat(iquot(n, g), iquot(d, g)));
       } else if (d < 0) {
-        return (rat(iquot(-n, g), iquot(-d, g)));
+        return right(rat(iquot(-n, g), iquot(-d, g)));
       } else {
-        return dne();
+        return left(algebraError(
+          `Encountered a zero denominator`,
+          `call:simplifyRationalNumber`,
+        ));
       }
     }
   } else {
-    return dne();
+    return left(algebraError(
+      `Received an argument that is not an integer or a rational`,
+      `call:simplifyRationalNumber`,
+    ));
   }
 };
 
-const j = exp(`12|8`);
-const k = j.map((x) => simplifyRationalNumber(x));
+/**
+ * Returns the numerator of the given mathematical expression.
+ */
+const numerator = (expression: MathExpression): Either<AlgebraError, Int> => {
+  if (kind(expression) === "rational") {
+    return right(int((expression as Rational).$n));
+  } else if (kind(expression) === "integer") {
+    return right(int((expression as Int).$n));
+  } else {
+    return left(algebraError(
+      `numerator called with neither a rational nor an integer`,
+      `call:numerator`,
+    ));
+  }
+};
+
+const evalQuotient = (v: Int | Rational, w: Int | Rational) => {
+};
+
+const j = exp(`(2 + 5) * (3 + 8)`);
+const k = j.map((x) => x.toString());
 print(treed(k));

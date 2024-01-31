@@ -5337,9 +5337,16 @@ const fun = (functionName: string, args: AlgebraicExpression[]) => (
   new AlgebraicFn(functionName, args)
 );
 
-function exp(code: string) {
-  const state = enstate(code);
+/**
+ * Given the provided `expression`,
+ * returns the parsed algebraic syntax tree.
+ */
+function exp(expression: string) {
+  const state = enstate(expression);
 
+  /**
+   * Parses a symbol.
+   */
   const symbol: ParseRule<MathExpression> = (op) => {
     if (!op.isIdentifier()) {
       return state.error(
@@ -5350,6 +5357,10 @@ function exp(code: string) {
       return state.expr(sym(op.$lexeme));
     }
   };
+
+  /**
+   * Parses a floating point number.
+   */
   const float: ParseRule<MathExpression> = (op) => {
     if (!op.isNumericToken()) {
       return state.error(
@@ -5360,6 +5371,10 @@ function exp(code: string) {
       return state.expr(real(op.$literal));
     }
   };
+
+  /**
+   * Parses an integer.
+   */
   const integer: ParseRule<MathExpression> = (op) => {
     if (!op.isNumericToken()) {
       return state.error(
@@ -5370,6 +5385,10 @@ function exp(code: string) {
       return state.expr(int(op.$literal));
     }
   };
+
+  /**
+   * Parses a rational number.
+   */
   const rational: ParseRule<MathExpression> = (op) => {
     if (!op.isFraction()) {
       return state.error(
@@ -5382,6 +5401,9 @@ function exp(code: string) {
     }
   };
 
+  /**
+   * Parses a negation.
+   */
   const negation: ParseRule<MathExpression> = (op) => {
     const p = precOf(op.$type);
     const e = expr(p);
@@ -5398,6 +5420,9 @@ function exp(code: string) {
     return state.expr(neg(arg));
   };
 
+  /**
+   * Parses a difference expression.
+   */
   const diffExpr: ParseRule<MathExpression> = (op, left) => {
     if (!left.isAlgebraic()) {
       return state.error(
@@ -5420,6 +5445,9 @@ function exp(code: string) {
     return state.expr(out);
   };
 
+  /**
+   * Parses a quotient expression.
+   */
   const quotientExpr: ParseRule<MathExpression> = (op, left) => {
     if (!left.isAlgebraic()) {
       return state.error(
@@ -5442,6 +5470,9 @@ function exp(code: string) {
     return state.expr(out);
   };
 
+  /**
+   * Parses a power expression.
+   */
   const powerExpr: ParseRule<MathExpression> = (op, left) => {
     if (!left.isAlgebraic()) {
       return state.error(
@@ -5464,6 +5495,9 @@ function exp(code: string) {
     return state.expr(out);
   };
 
+  /**
+   * Parses a factorial expression.
+   */
   const factorialExpr: ParseRule<MathExpression> = (op, arg) => {
     if (!arg.isAlgebraic()) {
       return state.error(
@@ -5475,6 +5509,9 @@ function exp(code: string) {
     return state.expr(out);
   };
 
+  /**
+   * Parses a production expression.
+   */
   const productExpr: ParseRule<MathExpression> = (op, left) => {
     const rhs = expr(precOf(op.$type));
     if (rhs.isLeft()) {
@@ -5501,6 +5538,10 @@ function exp(code: string) {
     const out = product(args);
     return state.expr(out);
   };
+
+  /**
+   * Parses a sum expression.
+   */
   const sumExpr: ParseRule<MathExpression> = (op, left) => {
     const rhs = expr(precOf(op.$type));
     if (rhs.isLeft()) {
@@ -5528,6 +5569,9 @@ function exp(code: string) {
     return state.expr(out);
   };
 
+  /**
+   * Parses a call expression.
+   */
   const callExpr: ParseRule<MathExpression> = (op, lastNode) => {
     const callee = lastNode;
     if (!isSym(callee)) {
@@ -5564,6 +5608,7 @@ function exp(code: string) {
     return state.expr(out);
   };
 
+  /** Parses a parenthesized expression. */
   const primary: ParseRule<MathExpression> = () => {
     const inner = expr();
     if (inner.isLeft()) {
@@ -5730,7 +5775,10 @@ function exp(code: string) {
   return run();
 }
 
-class Kind implements ExprVisitor<ExpressionType> {
+/**
+ * A class implementing the `kind` function.
+ */
+class KIND implements ExprVisitor<ExpressionType> {
   int(expr: Int): ExpressionType {
     return "integer";
   }
@@ -5771,11 +5819,18 @@ class Kind implements ExprVisitor<ExpressionType> {
     return `fn-${expr.$op}`;
   }
 }
-const $KIND = new Kind();
-const kind = (expr: MathExpression) => (
-  expr.accept($KIND)
+const $KIND = new KIND();
+
+/**
+ * This function returns the given `expression`’s kind.
+ */
+const kind = (expression: MathExpression) => (
+  expression.accept($KIND)
 );
 
+/**
+ * A class implementing the `nops` function.
+ */
 class NOPS implements ExprVisitor<number> {
   int(expr: Int): number {
     return 0;
@@ -5819,9 +5874,14 @@ class NOPS implements ExprVisitor<number> {
 }
 const $NOPS = new NOPS();
 
-/** Returns the number of operands of the given expression. */
-const nops = (expr: MathExpression) => (
-  expr.accept($NOPS)
+/**
+ * Returns the number of operands of the given
+ * `expression`. If the expression is not a compound
+ * expression (i.e., an atom), the number of operands
+ * is always `0`.
+ */
+const nops = (expression: MathExpression) => (
+  expression.accept($NOPS)
 );
 
 class OPERAND_AT implements ExprVisitor<MathExpression> {
@@ -5877,48 +5937,48 @@ class OPERAND_AT implements ExprVisitor<MathExpression> {
     return this.argAt(expr);
   }
 }
-const operand = (expr: MathExpression, index: number) => (
-  expr.accept(new OPERAND_AT(index))
-);
 
-const algebraError = (message: string, phase: string) => (
-  runtimeError(message, phase, -1, -1)
+/**
+ * This function returns the `ith` operand of the given
+ * `expression`. If the expression is not a compound expression
+ * (i.e., an atom), the symbol `dne` is returned.
+ */
+const operand = (expression: MathExpression, ith: number) => (
+  expression.accept(new OPERAND_AT(ith))
 );
 
 /**
- * Simplifies a rational number.
+ * This function simplifies a rational number. That is,
+ * given a rational number `a/b`, returns `a/b`
+ * in standard form (if an integer `n` is 
+ * provided, returns `n`, since `n = n/1`, and `n/1`
+ * is in standard form).
  */
 const simplifyRationalNumber = (
   u: MathExpression,
-): Either<Err, (Int | Rational)> => {
+) => {
   if (kind(u) === "integer") {
-    return right(u as Int);
+    return (u as Int);
   } else if (kind(u) === "rational") {
     let n = (u as Rational).$n;
     let d = (u as Rational).$d;
     if (mod(n, d) === 0) {
-      return right(int(iquot(n, d)));
+      return (int(iquot(n, d)));
     } else {
       let g = gcd(n, d);
       if (d > 0) {
-        return right(rat(iquot(n, g), iquot(d, g)));
+        return (rat(iquot(n, g), iquot(d, g)));
       } else if (d < 0) {
-        return right(rat(iquot(-n, g), iquot(-d, g)));
+        return (rat(iquot(-n, g), iquot(-d, g)));
       } else {
-        return left(algebraError(
-          `Encountered a 0 denominator`,
-          `simplifying a rational number`,
-        ));
+        return dne();
       }
     }
   } else {
-    return left(algebraError(
-      `Argument to simplifyRationalNumber is neither a rational nor an int`,
-      `simplifying a rational number`,
-    ));
+    return dne();
   }
 };
 
-const j = exp(`2|4`);
-const k = j.chain((x) => simplifyRationalNumber(x));
+const j = exp(`12|8`);
+const k = j.map((x) => simplifyRationalNumber(x));
 print(treed(k));

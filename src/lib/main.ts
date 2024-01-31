@@ -6147,6 +6147,22 @@ const simplifyRationalNumber = (
 };
 
 /**
+ * Returns the denominator of the given mathematical expression.
+ */
+const denominator = (expression: MathExpression): Either<AlgebraError, Int> => {
+  if (kind(expression) === "rational") {
+    return right(int((expression as Rational).$d));
+  } else if (kind(expression) === "integer") {
+    return right(int(1));
+  } else {
+    return left(algebraError(
+      `numerator called with neither a rational nor an integer`,
+      `call:numerator`,
+    ));
+  }
+};
+
+/**
  * Returns the numerator of the given mathematical expression.
  */
 const numerator = (expression: MathExpression): Either<AlgebraError, Int> => {
@@ -6162,7 +6178,74 @@ const numerator = (expression: MathExpression): Either<AlgebraError, Int> => {
   }
 };
 
-const evalQuotient = (v: Int | Rational, w: Int | Rational) => {
+/**
+ * This function returns the rational product of expressions
+ * v and w.
+ */
+const evalProduct = (v: MathExpression, w: MathExpression) => {
+  const vKind = kind(v);
+  const wKind = kind(w);
+  if (
+    (vKind === "integer" || vKind === "rational") &&
+    (wKind === "integer" || wKind === "rational")
+  ) {
+    const nV = numerator(v);
+    if (nV.isLeft()) return nV;
+    const dV = denominator(v);
+    if (dV.isLeft()) return dV;
+    const nW = numerator(w);
+    if (nW.isLeft()) return nW;
+    const dW = denominator(w);
+    if (dW.isLeft()) return dW;
+    const NV = nV.unwrap();
+    const DV = dV.unwrap();
+    const NW = nW.unwrap();
+    const DW = dW.unwrap();
+    return right(rat(
+      NV.$n * NW.$n,
+      DV.$n * DW.$n,
+    ));
+  } else {
+    return left(algebraError(
+      `An argument passed to evalQuotient is neither a rational or an integer`,
+      `call:evalQuotient`,
+    ));
+  }
+};
+
+/**
+ * This function returns the rational quotient of expressions
+ * v and w.
+ */
+const evalQuotient = (v: MathExpression, w: MathExpression) => {
+  const vKind = kind(v);
+  const wKind = kind(w);
+  if (
+    (vKind === "integer" || vKind === "rational") &&
+    (wKind === "integer" || wKind === "rational")
+  ) {
+    const nV = numerator(v);
+    if (nV.isLeft()) return nV;
+    const dV = denominator(v);
+    if (dV.isLeft()) return dV;
+    const nW = numerator(w);
+    if (nW.isLeft()) return nW;
+    const dW = denominator(w);
+    if (dW.isLeft()) return dW;
+    const NV = nV.unwrap();
+    const DV = dV.unwrap();
+    const NW = nW.unwrap();
+    const DW = dW.unwrap();
+    return right(rat(
+      NV.$n * DW.$n,
+      NW.$n * DV.$n,
+    ));
+  } else {
+    return left(algebraError(
+      `An argument passed to evalQuotient is neither a rational or an integer`,
+      `call:evalQuotient`,
+    ));
+  }
 };
 
 const j = exp(`(2 + 5) * (3 + 8)`);

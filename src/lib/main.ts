@@ -968,8 +968,6 @@ const rowVector = (elements: number[]) => {
   return new RealMatrix(out);
 };
 
-// § Start: Compiler ===================================================
-
 enum TokenType {
   /** Delimiter token: `(` */
   LEFT_PAREN,
@@ -3753,6 +3751,17 @@ const simplifyRNE = (u: MathExpression) => {
 
 const order = (a: MathExpression, b: MathExpression) => {
 };
+
+// § Graphics Module ===========================================================
+// This section implements Woven’s graphics modules.
+/**
+ * Returns the number between `x` and `y` at the specified increment `a`.
+ */
+const lerp = (x: number, y: number, a: number) => x + (a * abs(y - x));
+
+
+// § Compiler Module ===========================================================
+// This section marks the beginning of Woven’s interpreter.
 
 interface Visitor<T> {
   intExpr(expr: IntExpr): T;

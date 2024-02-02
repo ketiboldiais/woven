@@ -285,31 +285,6 @@ const right = <T>(x: T): Right<T> => new Right(x);
 // code interpretation. These objects are also used in Woven’s algebraic
 // runtime.
 
-/** An object corresponding to a fraction.  */
-class Fraction {
-  /** The numerator of this fraction. */
-  $n: number;
-  /** The denominator of this fraction. */
-  $d: number;
-  constructor(n: number, d: number) {
-    this.$n = floor(n);
-    this.$d = floor(d);
-  }
-}
-
-/** Returns a new fraction. */
-const frac = (numerator: number, denominator: number) => (
-  new Fraction(numerator, denominator)
-);
-
-/**
- * Returns true, and asserts, if
- * the given value is a fraction.
- */
-const isFrac = (value: any): value is Fraction => (
-  value instanceof Fraction
-);
-
 /** An object corresponding to a scientific number. */
 class Scinum {
   $b: number;
@@ -317,6 +292,15 @@ class Scinum {
   constructor(b: number, e: number) {
     this.$b = b;
     this.$e = e;
+  }
+  /**
+   * Returns a string representation of this scientific
+   * number. String representations take the form
+   * `bEe`, where `b` is the base, and `e` is
+   * the exponent.
+   */
+  toString() {
+    return `${this.$b}E${this.$e}`;
   }
 }
 
@@ -333,21 +317,57 @@ const isScinum = (value: any): value is Scinum => (
   value instanceof Scinum
 );
 
-class MSet<T> {
-  $elements: Set<T>;
-  constructor(elements: T[]) {
+/**
+ * An object corresponding to a set at runtime.
+ */
+class RSet {
+  $elements: Set<RuntimeValue>;
+  constructor(elements: RuntimeValue[]) {
     this.$elements = new Set(elements);
+  }
+  /** Returns the number of elements of this set. */
+  card() {
+    return this.$elements.size;
+  }
+  toString() {
+    let out = "SET {";
+    let i = 0;
+    const size = this.card();
+    this.$elements.forEach((e) => {
+      out += strof(e);
+      if (i !== size - 1) {
+        out += ",";
+      }
+      i++;
+    });
+    out += "}";
+    return out;
   }
 }
 
 /** Returns a new Set. */
-const set = <T>(elements: T[]) => (new MSet(elements));
+const set = (elements: RuntimeValue[]) => (new RSet(elements));
+const isRSet = (x: any): x is RSet => (
+  x instanceof RSet
+);
 
 /** An object corresponding to a vector of floating point numbers. */
 class RealVector {
   $elements: number[];
   constructor(elements: number[]) {
     this.$elements = elements;
+  }
+  /** Returns a string representation of this RealVector. */
+  toString() {
+    let out = "[";
+    for (let i = 0; i < this.$elements.length; i++) {
+      out += `${this.$elements[i]}`;
+      if (i !== this.$elements.length - 1) {
+        out += ",";
+      }
+    }
+    out += "]";
+    return out;
   }
   /** Returns the number of elements of this RealVector. */
   get length() {
@@ -382,19 +402,19 @@ class RealVector {
     return new RealVector(out);
   }
   /**
-   * Returns a new RealVector corresponding to 
+   * Returns a new RealVector corresponding to
    * the negation of this vector.
    */
   neg() {
     return this.unaryOp((n) => -n);
   }
   /**
-   * Returns a new RealVector corresponding to the 
+   * Returns a new RealVector corresponding to the
    * product of `k`, a scalar, and
    * this vector.
    */
-  smul(k:number) {
-    return this.binaryOp((a,b) => a * b, k);
+  smul(k: number) {
+    return this.binaryOp((a, b) => a * b, k);
   }
 }
 
@@ -407,7 +427,7 @@ const rvector = (elements: number[]) => (
  * Returns true, and asserts,
  * if the given `x` is a vector.
  */
-const isVector = (x: any): x is RealVector => (
+const isRealVector = (x: any): x is RealVector => (
   x instanceof RealVector
 );
 
@@ -422,6 +442,18 @@ class RealMatrix {
     this.$vectors = vectors;
     this.$rows = vectors.length;
     this.$columns = vectors[0].length;
+  }
+  /** Returns a string representation of this RealMatrix. */
+  toString() {
+    let out = "[";
+    for (let i = 0; i < this.$rows; i++) {
+      out += this.$vectors[i].toString();
+      if (i !== this.$rows - 1) {
+        out += "\n";
+      }
+    }
+    out += "]";
+    return out;
   }
   get length() {
     return this.$rows;
@@ -440,7 +472,7 @@ const rmatrix = (vectors: RealVector[]) => (
  * Returns true, and asserts,
  * if x is a matrix.
  */
-const isMatrix = (x: any): x is RealMatrix => (
+const isRealMatrix = (x: any): x is RealMatrix => (
   x instanceof RealMatrix
 );
 
@@ -1404,7 +1436,7 @@ export function lexicalAnalysis(code: string) {
             `scanning a fraction`,
           );
         } else {
-          return newToken(type).literal(frac(numerator, denominator));
+          return newToken(type).literal(rat(numerator, denominator));
         }
       }
       default:
@@ -1740,6 +1772,1495 @@ export function lexicalAnalysis(code: string) {
     isDone,
   };
 }
+
+type RelationOp = "<" | ">" | "=" | "!=" | "<=" | ">=";
+type AlgebraicOp = "+" | "-" | "/" | "*" | "!" | "^";
+type ExpressionType =
+  | "symbol"
+  | "integer"
+  | "real"
+  | "rational"
+  | "dne"
+  | RelationOp
+  | `fn-${string}`
+  | AlgebraicOp;
+
+interface ExprVisitor<T> {
+  int(expr: Int): T;
+  rational(expr: Fraction): T;
+  sym(expr: Sym): T;
+  dne(expr: DNE): T;
+  real(expr: Real): T;
+  relation(expr: Relation): T;
+  sum(expr: Sum): T;
+  product(expr: Product): T;
+  power(expr: Power): T;
+  difference(expr: Difference): T;
+  quotient(expr: Quotient): T;
+  factorial(expr: Factorial): T;
+  algebraicFn(expr: AlgebraicFn): T;
+}
+
+/** An object corresponding to a mathematical expression. */
+abstract class MathExpression {
+  /** The parenthesis level of this expression. */
+  $parenLevel: number = 0;
+  parend() {
+    this.$parenLevel++;
+    return this;
+  }
+  /** Sets the parenthesis level of this expression to the provided level. */
+  toParenLevel(level: number) {
+    this.$parenLevel = level;
+    return this;
+  }
+  /** Sets the parenthesis level of this expression to 0. */
+  unParen() {
+    this.$parenLevel = 0;
+    return this;
+  }
+  /**
+   * Returns true if this expression is an algebraic
+   * expression, false otherwise.
+   */
+  abstract isAlgebraic(): this is AlgebraicExpression;
+  abstract toString(): string;
+  abstract accept<T>(visitor: ExprVisitor<T>): T;
+}
+
+/** An object corresponding to an atomic expression. */
+abstract class Atom extends MathExpression {}
+
+type AlgebraicExpression =
+  | Int
+  | Sym
+  | Sum
+  | Power
+  | Difference
+  | Quotient
+  | Factorial
+  | AlgebraicFn;
+
+/** An object corresponding to an integer. */
+class Int extends Atom {
+  $n: number;
+  constructor(value: number) {
+    super();
+    this.$n = floor(value);
+  }
+  toString(): string {
+    return `${this.$n}`;
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.int(this);
+  }
+  /**
+   * Returns this integer as a rational.
+   */
+  toRat() {
+    return rat(this.$n, 1);
+  }
+}
+
+/** Returns a new integer. */
+const int = (value: number) => (new Int(value));
+
+/** An object corresponding to a rational number. */
+class Fraction extends Atom {
+  $n: number;
+  $d: number;
+  constructor(n: number, d: number) {
+    super();
+    this.$n = floor(n);
+    this.$d = floor(d);
+  }
+  toString(): string {
+    return `${this.$n}|${this.$d}`;
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.rational(this);
+  }
+  /** Returns this rational as a real (floating point number). */
+  toReal() {
+    return real(this.$n / this.$d);
+  }
+}
+
+/** Returns a new rational. */
+const rat = (numerator: number, denominator: number) => (
+  new Fraction(numerator, denominator)
+);
+const isFrac = (x: any): x is Fraction => (
+  x instanceof Fraction
+);
+
+/** An object corresponding to a symbol. */
+class Sym extends Atom {
+  $s: string;
+  constructor(symbol: string) {
+    super();
+    this.$s = symbol;
+  }
+  toString(): string {
+    return this.$s;
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.sym(this);
+  }
+}
+
+/** Returns a new symbol. */
+const sym = (symbol: string) => (new Sym(symbol));
+const isSym = (x: any): x is Sym => (
+  x instanceof Sym
+);
+
+/**
+ * An object corresponding to "Does Not Exist."
+ * At runtime, this is equivalent to the JavaScript
+ * "undefined".
+ */
+class DNE extends Atom {
+  constructor() {
+    super();
+  }
+  toString(): string {
+    return `DNE`;
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.dne(this);
+  }
+}
+const UNDEFINED = new DNE();
+
+/** An object corresponding to a real number. */
+class Real extends Atom {
+  $n: number;
+  constructor(value: number) {
+    super();
+    this.$n = value;
+  }
+  toString(): string {
+    return `${this.$n}`;
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.real(this);
+  }
+  /**
+   * Returns this real as an approximated rational.
+   */
+  toRat(tolerance: number = 0.00001) {
+    let x = this.$n;
+    if (x === 0) {
+      return rat(0, 1);
+    }
+    if (x < 0) {
+      x = -x;
+    }
+    let num = 1;
+    let den = 1;
+    const iterate = () => {
+      let R = num / den;
+      if ((abs(R - x) / x) < tolerance) {
+        return;
+      }
+      if (R < x) {
+        num++;
+      } else den++;
+      iterate();
+    };
+    iterate();
+    return rat(num, den);
+  }
+}
+
+/** Returns a new real number. */
+const real = (value: number) => (new Real(value));
+
+/**
+ * An object corresponding to a compound
+ * expression. All compound expressions
+ * comprise of an operator and a list
+ * of arguments.
+ */
+abstract class Compound extends MathExpression {
+  $op: string;
+  $args: MathExpression[];
+  constructor(op: string, args: MathExpression[]) {
+    super();
+    this.$op = op;
+    this.$args = args;
+  }
+}
+
+/** An object corresponding to a relational expression. */
+class Relation extends Compound {
+  $args: [MathExpression, MathExpression];
+  $op: RelationOp;
+  constructor(op: RelationOp, left: MathExpression, right: MathExpression) {
+    super(op, [left, right]);
+    this.$args = [left, right];
+    this.$op = op;
+  }
+  left() {
+    return this.$args[0];
+  }
+  right() {
+    return this.$args[1];
+  }
+  toString(): string {
+    const L = this.left().toString();
+    const R = this.right().toString();
+    const op = this.$op;
+    if (this.$parenLevel) {
+      return `(${L} ${op} ${R})`;
+    } else {
+      return `${L} ${op} ${R}`;
+    }
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return false;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.relation(this);
+  }
+}
+
+/** Returns a new relational expression. */
+const relation = (
+  op: RelationOp,
+  left: MathExpression,
+  right: MathExpression,
+) => (
+  new Relation(op, left, right)
+);
+
+/**
+ * An object corresponding to a sum.
+ * Sums may have an arbitrary number of
+ * arguments.
+ */
+class Sum extends Compound {
+  $args: AlgebraicExpression[];
+  $op: "+" = "+";
+  constructor(args: AlgebraicExpression[]) {
+    super("+", args);
+    this.$args = args;
+  }
+  toString(): string {
+    let out = "";
+    for (let i = 0; i < this.$args.length; i++) {
+      out += this.$args[i].toString();
+      if (i !== this.$args.length - 1) {
+        out += " + ";
+      }
+    }
+    if (this.$parenLevel) {
+      return `(${out})`;
+    } else {
+      return out;
+    }
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.sum(this);
+  }
+}
+
+/** Returns a new sum expression. */
+const sum = (args: AlgebraicExpression[]) => (
+  new Sum(args)
+);
+
+/** Returns true if the given object is a sum expression. */
+const isSum = (obj: any): obj is Sum => (obj instanceof Sum);
+
+/**
+ * An object corresponding to a product.
+ * Products may have an arbitrary number
+ * of arguments.
+ */
+class Product extends Compound {
+  $args: AlgebraicExpression[];
+  $op: "*" = "*";
+  constructor(args: AlgebraicExpression[]) {
+    super("*", args);
+
+    this.$args = args;
+  }
+  toString(): string {
+    let out = "";
+    for (let i = 0; i < this.$args.length; i++) {
+      out += this.$args[i].toString();
+      if (i !== this.$args.length - 1) {
+        out += " * ";
+      }
+    }
+    if (this.$parenLevel) {
+      return `(${out})`;
+    } else {
+      return out;
+    }
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.product(this);
+  }
+}
+
+/** Returns a new product expression. */
+const product = (args: AlgebraicExpression[]) => (new Product(args));
+
+/** Returns true if the given object is a product. */
+const isProduct = (obj: any): obj is Product => (obj instanceof Product);
+
+/**
+ * An object corresponding to a power expression.
+ * The `^` operator is a binary infix operator.
+ * That is, `^` always takes two, and only two,
+ * arguments.
+ */
+class Power extends Compound {
+  $args: [AlgebraicExpression, AlgebraicExpression];
+  $op: "^" = "^";
+  constructor(base: AlgebraicExpression, exponent: AlgebraicExpression) {
+    super("^", [base, exponent]);
+    this.$args = [base, exponent];
+  }
+  left() {
+    return this.$args[0];
+  }
+  right() {
+    return this.$args[1];
+  }
+  toString(): string {
+    const L = this.left().toString();
+    const R = this.right().toString();
+    if (this.$parenLevel) {
+      return `(${L}^${R})`;
+    } else {
+      return `${L}^${R}`;
+    }
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.power(this);
+  }
+}
+
+/** Returns a new power expression. */
+const power = (
+  base: AlgebraicExpression,
+  exponent: AlgebraicExpression,
+) => (new Power(base, exponent));
+
+/** An object corresponding to a difference expression. */
+class Difference extends Compound {
+  $args: [AlgebraicExpression, AlgebraicExpression];
+  $op: "-" = "-";
+  constructor(left: AlgebraicExpression, right: AlgebraicExpression) {
+    super("-", [left, right]);
+    this.$args = [left, right];
+  }
+  left() {
+    return this.$args[0];
+  }
+  right() {
+    return this.$args[1];
+  }
+  toString(): string {
+    const L = this.left().toString();
+    const R = this.right().toString();
+    if (this.$parenLevel) {
+      return `(${L} - ${R})`;
+    } else {
+      return `${L} - ${R}`;
+    }
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.difference(this);
+  }
+}
+
+/** Returns the difference expression `left - right`. */
+const diff = (left: AlgebraicExpression, right: AlgebraicExpression) => (
+  new Difference(left, right)
+);
+
+/** Returns the negation of the given expression. */
+const neg = (expression: AlgebraicExpression) => (
+  product([int(-1), expression])
+);
+
+/** An object corresponding to a quotient. */
+class Quotient extends Compound {
+  $args: [AlgebraicExpression, AlgebraicExpression];
+  $op: "/" = "/";
+  constructor(a: AlgebraicExpression, b: AlgebraicExpression) {
+    super("/", [a, b]);
+    this.$args = [a, b];
+  }
+  left() {
+    return this.$args[0];
+  }
+  right() {
+    return this.$args[1];
+  }
+  toString(): string {
+    const L = this.left().toString();
+    const R = this.right().toString();
+    if (this.$parenLevel) {
+      return `(${L}/${R})`;
+    } else {
+      return `${L}/${R}`;
+    }
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.quotient(this);
+  }
+}
+
+/** Returns a new quotient expression. */
+const quotient = (a: AlgebraicExpression, b: AlgebraicExpression) => (
+  new Quotient(a, b)
+);
+
+/** An object corresponding to a factorial. */
+class Factorial extends Compound {
+  $args: [AlgebraicExpression];
+  $op: "!" = "!";
+  constructor(arg: AlgebraicExpression) {
+    super("!", [arg]);
+    this.$args = [arg];
+  }
+  arg() {
+    return this.$args[0];
+  }
+  toString(): string {
+    const arg = this.arg().toString();
+    if (this.$parenLevel) {
+      return `(${arg}!)`;
+    } else {
+      return `${arg}!`;
+    }
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.factorial(this);
+  }
+}
+
+/** Returns a new factorial expression. */
+const factorial = (arg: AlgebraicExpression) => (new Factorial(arg));
+
+/** A class corresponding to a function call. */
+class AlgebraicFn extends Compound {
+  $args: AlgebraicExpression[];
+  constructor(functionName: string, args: AlgebraicExpression[]) {
+    super(functionName, args);
+    this.$args = args;
+  }
+  toString(): string {
+    const name = this.$op;
+    let out = `${name}(`;
+    for (let i = 0; i < this.$args.length; i++) {
+      out += this.$args[i].toString();
+      if (i !== this.$args.length - 1) {
+        out += ",";
+      }
+    }
+    out += ")";
+    if (this.$parenLevel) {
+      return `(${out})`;
+    } else {
+      return out;
+    }
+  }
+  isAlgebraic(): this is AlgebraicExpression {
+    return true;
+  }
+  accept<T>(visitor: ExprVisitor<T>): T {
+    return visitor.algebraicFn(this);
+  }
+}
+
+/** Returns a new function call expression. */
+const fun = (functionName: string, args: AlgebraicExpression[]) => (
+  new AlgebraicFn(functionName, args)
+);
+
+/**
+ * Given the provided `expression`,
+ * returns the parsed algebraic syntax tree.
+ */
+function exp(expression: string) {
+  const state = enstate(expression);
+
+  /**
+   * Parses a symbol.
+   */
+  const symbol: ParseRule<MathExpression> = (op) => {
+    if (!op.isIdentifier()) {
+      return state.error(
+        `Expected symbol`,
+        `parsing symbol`,
+      );
+    } else {
+      return state.expr(sym(op.$lexeme));
+    }
+  };
+
+  /**
+   * Parses a floating point number.
+   */
+  const float: ParseRule<MathExpression> = (op) => {
+    if (!op.isNumericToken()) {
+      return state.error(
+        `Expected integer`,
+        `parsing integer`,
+      );
+    } else {
+      return state.expr(real(op.$literal));
+    }
+  };
+
+  /**
+   * Parses an integer.
+   */
+  const integer: ParseRule<MathExpression> = (op) => {
+    if (!op.isNumericToken()) {
+      return state.error(
+        `Expected integer`,
+        `parsing integer`,
+      );
+    } else {
+      return state.expr(int(op.$literal));
+    }
+  };
+
+  /**
+   * Parses a rational number.
+   */
+  const rational: ParseRule<MathExpression> = (op) => {
+    if (!op.isFraction()) {
+      return state.error(
+        `Expected a rational`,
+        `parsing a rational`,
+      );
+    } else {
+      const literal = op.$literal;
+      return state.expr(rat(literal.$n, literal.$d));
+    }
+  };
+
+  /**
+   * Parses a negation.
+   */
+  const negation: ParseRule<MathExpression> = (op) => {
+    const p = precOf(op.$type);
+    const e = expr(p);
+    if (e.isLeft()) {
+      return e;
+    }
+    const arg = e.unwrap();
+    if (!arg.isAlgebraic()) {
+      return state.error(
+        `The unary '-' may only be used with algebraic expressions`,
+        `parsing a negation`,
+      );
+    }
+    return state.expr(neg(arg));
+  };
+
+  /**
+   * Parses a difference expression.
+   */
+  const diffExpr: ParseRule<MathExpression> = (op, left) => {
+    if (!left.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '-'`,
+        "parsing a quotient",
+      );
+    }
+    const rhs = expr(precOf(op.$type));
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const right = rhs.unwrap();
+    if (!right.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '-'`,
+        "parsing a quotient",
+      );
+    }
+    const out = diff(left, right);
+    return state.expr(out);
+  };
+
+  /**
+   * Parses a quotient expression.
+   */
+  const quotientExpr: ParseRule<MathExpression> = (op, left) => {
+    if (!left.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '/'`,
+        "parsing a quotient",
+      );
+    }
+    const rhs = expr(precOf(op.$type));
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const right = rhs.unwrap();
+    if (!right.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '/'`,
+        "parsing a quotient",
+      );
+    }
+    const out = quotient(left, right);
+    return state.expr(out);
+  };
+
+  /**
+   * Parses a power expression.
+   */
+  const powerExpr: ParseRule<MathExpression> = (op, left) => {
+    if (!left.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '^'`,
+        `parsing a power`,
+      );
+    }
+    const rhs = expr(precOf(op.$type));
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const right = rhs.unwrap();
+    if (!right.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '^'`,
+        `parsing a power`,
+      );
+    }
+    const out = power(left, right);
+    return state.expr(out);
+  };
+
+  /**
+   * Parses a factorial expression.
+   */
+  const factorialExpr: ParseRule<MathExpression> = (op, arg) => {
+    if (!arg.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '!'`,
+        `parsing a factorial`,
+      );
+    }
+    const out = factorial(arg);
+    return state.expr(out);
+  };
+
+  /**
+   * Parses a production expression.
+   */
+  const productExpr: ParseRule<MathExpression> = (op, left) => {
+    const rhs = expr(precOf(op.$type));
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const right = rhs.unwrap();
+    if (!left.isAlgebraic() || !right.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '*'`,
+        `parsing a product`,
+      );
+    }
+    const args: AlgebraicExpression[] = [];
+    if (isProduct(left)) {
+      args.push(...left.$args);
+    } else {
+      args.push(left);
+    }
+    if (isProduct(right)) {
+      args.push(...right.$args);
+    } else {
+      args.push(right);
+    }
+    const out = product(args);
+    return state.expr(out);
+  };
+
+  /**
+   * Parses a sum expression.
+   */
+  const sumExpr: ParseRule<MathExpression> = (op, left) => {
+    const rhs = expr(precOf(op.$type));
+    if (rhs.isLeft()) {
+      return rhs;
+    }
+    const right = rhs.unwrap();
+    if (!left.isAlgebraic() || !right.isAlgebraic()) {
+      return state.error(
+        `Only algebraic expressions may be used with '+'`,
+        `parsing a sum`,
+      );
+    }
+    const args: AlgebraicExpression[] = [];
+    if (isSum(left)) {
+      args.push(...left.$args);
+    } else {
+      args.push(left);
+    }
+    if (isSum(right)) {
+      args.push(...right.$args);
+    } else {
+      args.push(right);
+    }
+    const out = sum(args);
+    return state.expr(out);
+  };
+
+  /**
+   * Parses a call expression.
+   */
+  const callExpr: ParseRule<MathExpression> = (op, lastNode) => {
+    const callee = lastNode;
+    if (!isSym(callee)) {
+      return state.error(
+        `Expected a symbol for a function name`,
+        `parsing a call expression`,
+      );
+    }
+    const args: AlgebraicExpression[] = [];
+    if (!state.check(TokenType.RIGHT_PAREN)) {
+      do {
+        const e = expr();
+        if (e.isLeft()) {
+          return e;
+        }
+        const element = e.unwrap();
+        if (!element.isAlgebraic()) {
+          return state.error(
+            `Only algebraic expressions may be passed to calls`,
+            `parsing a call expression`,
+          );
+        }
+        args.push(element);
+      } while (state.nextIs(TokenType.COMMA));
+    }
+
+    if (!state.nextIs(TokenType.RIGHT_PAREN)) {
+      return state.error(
+        `Expected a “)” to close the arguments`,
+        `parsing a function call`,
+      );
+    }
+    const out = fun(callee.$s, args);
+    return state.expr(out);
+  };
+
+  /** Parses a parenthesized expression. */
+  const primary: ParseRule<MathExpression> = () => {
+    const inner = expr();
+    if (inner.isLeft()) {
+      return inner;
+    }
+    if (!state.nextIs(TokenType.RIGHT_PAREN)) {
+      return state.error(
+        `Expected a closing “)”`,
+        `parsing a parenthesized expression`,
+      );
+    }
+    return state.expr(inner.unwrap().parend());
+  };
+
+  /**
+   * Alias for BP.NONE, corresponding
+   * to a binding power of nothing.
+   * This is used purely as a placeholder
+   * for the ParseRuleTable.
+   */
+  const ___o = BP.NONE;
+
+  /**
+   * A parse rule that always returns an
+   * error. This is used purely as a
+   * placeholder for empty slots in the
+   * parse rules table.
+   */
+  const ___: ParseRule<MathExpression> = (t) => {
+    if (state.$error !== null) {
+      return left(state.$error);
+    } else {
+      return state.error(
+        `Unrecognized lexeme in algebraic parser: ${t.$lexeme}`,
+        `algebraic expression`,
+      );
+    }
+  };
+  const rules: ParseRuleTable<MathExpression> = {
+    [TokenType.PLUS]: [___, sumExpr, BP.SUM],
+    [TokenType.MINUS]: [negation, diffExpr, BP.DIFFERENCE],
+    [TokenType.SLASH]: [___, quotientExpr, BP.QUOTIENT],
+    [TokenType.STAR]: [___, productExpr, BP.PRODUCT],
+    [TokenType.CARET]: [___, powerExpr, BP.POWER],
+    [TokenType.LEFT_PAREN]: [primary, callExpr, BP.CALL],
+    [TokenType.RIGHT_PAREN]: [___, ___, ___o],
+    [TokenType.IDENTIFIER]: [symbol, ___, BP.LITERAL],
+    [TokenType.INT]: [integer, ___, BP.LITERAL],
+    [TokenType.FLOAT]: [float, ___, BP.LITERAL],
+    [TokenType.FRACTION]: [rational, ___, BP.LITERAL],
+    [TokenType.BANG]: [___, factorialExpr, BP.POSTFIX],
+
+    [TokenType.LEFT_BRACE]: [___, ___, ___o],
+    [TokenType.RIGHT_BRACE]: [___, ___, ___o],
+    [TokenType.LEFT_BRACKET]: [___, ___, ___o],
+    [TokenType.RIGHT_BRACKET]: [___, ___, ___o],
+    [TokenType.COMMA]: [___, ___, ___o],
+    [TokenType.DOT]: [___, ___, ___o],
+    [TokenType.COLON]: [___, ___, ___o],
+    [TokenType.SEMICOLON]: [___, ___, ___o],
+    [TokenType.VBAR]: [___, ___, ___o],
+    [TokenType.AMPERSAND]: [___, ___, ___o],
+    [TokenType.TILDE]: [___, ___, ___o],
+
+    [TokenType.MINUS_MINUS]: [___, ___, ___o],
+    [TokenType.PLUS_PLUS]: [___, ___, ___o],
+    [TokenType.PERCENT]: [___, ___, ___o],
+    [TokenType.EQUAL]: [___, ___, ___o],
+    [TokenType.EQUAL_EQUAL]: [___, ___, ___o],
+    [TokenType.BANG_EQUAL]: [___, ___, ___o],
+    [TokenType.LESS]: [___, ___, ___o],
+    [TokenType.GREATER]: [___, ___, ___o],
+    [TokenType.LESS_EQUAL]: [___, ___, ___o],
+    [TokenType.GREATER_EQUAL]: [___, ___, ___o],
+    [TokenType.AND]: [___, ___, ___o],
+    [TokenType.OR]: [___, ___, ___o],
+    [TokenType.NOT]: [___, ___, ___o],
+    [TokenType.REM]: [___, ___, ___o],
+    [TokenType.MOD]: [___, ___, ___o],
+    [TokenType.DIV]: [___, ___, ___o],
+    [TokenType.NOR]: [___, ___, ___o],
+    [TokenType.XOR]: [___, ___, ___o],
+    [TokenType.XNOR]: [___, ___, ___o],
+    [TokenType.NAND]: [___, ___, ___o],
+
+    [TokenType.SCIENTIFIC_NUMBER]: [___, ___, ___o],
+    [TokenType.STRING]: [___, ___, ___o],
+    [TokenType.CLASS]: [___, ___, ___o],
+    [TokenType.IF]: [___, ___, ___o],
+    [TokenType.ELSE]: [___, ___, ___o],
+    [TokenType.TRUE]: [___, ___, ___o],
+    [TokenType.FALSE]: [___, ___, ___o],
+    [TokenType.FOR]: [___, ___, ___o],
+    [TokenType.FN]: [___, ___, ___o],
+    [TokenType.NIL]: [___, ___, ___o],
+    [TokenType.PRINT]: [___, ___, ___o],
+    [TokenType.RETURN]: [___, ___, ___o],
+    [TokenType.SUPER]: [___, ___, ___o],
+    [TokenType.THIS]: [___, ___, ___o],
+    [TokenType.WHILE]: [___, ___, ___o],
+    [TokenType.NUMERIC_CONSTANT]: [___, ___, ___o],
+    [TokenType.LET]: [___, ___, ___o],
+    [TokenType.VAR]: [___, ___, ___o],
+    [TokenType.ERROR]: [___, ___, ___o],
+    [TokenType.EMPTY]: [___, ___, ___o],
+    [TokenType.END]: [___, ___, ___o],
+  };
+  /**
+   * Returns the prefix rule associated
+   * with the given token type.
+   */
+  const prefixRule = (type: TokenType): ParseRule<MathExpression> => (
+    rules[type][0]
+  );
+
+  /**
+   * Returns the infix rule associated
+   * with the given token type.
+   */
+  const infixRule = (type: TokenType): ParseRule<MathExpression> => (
+    rules[type][1]
+  );
+
+  /**
+   * Returns the precedence of the given
+   * token type.
+   */
+  const precOf = (type: TokenType): BP => (
+    rules[type][2]
+  );
+
+  /**
+   * Performs a Pratt parsing for an
+   * expression.
+   */
+  const expr = (minBP: BP = BP.LOWEST) => {
+    let token = state.next();
+    const prefix = prefixRule(token.$type);
+    let lhs = prefix(token, UNDEFINED);
+    if (lhs.isLeft()) {
+      return lhs;
+    }
+    while (minBP < precOf(state.$peek.$type)) {
+      if (state.atEnd()) {
+        break;
+      }
+      token = state.next();
+      const infix = infixRule(token.$type);
+      const rhs = infix(token, lhs.unwrap());
+      if (rhs.isLeft()) {
+        return rhs;
+      }
+      lhs = rhs;
+    }
+    return lhs;
+  };
+  const run = () => {
+    if (state.$error !== null) {
+      return left(state.$error);
+    } else {
+      return expr();
+    }
+  };
+  return run();
+}
+
+/**
+ * A class implementing the `kind` function.
+ */
+class KIND implements ExprVisitor<ExpressionType> {
+  int(expr: Int): ExpressionType {
+    return "integer";
+  }
+  rational(expr: Fraction): ExpressionType {
+    return "rational";
+  }
+  sym(expr: Sym): ExpressionType {
+    return "symbol";
+  }
+  dne(expr: DNE): ExpressionType {
+    return "dne";
+  }
+  real(expr: Real): ExpressionType {
+    return "real";
+  }
+  relation(expr: Relation): ExpressionType {
+    return expr.$op;
+  }
+  sum(expr: Sum): ExpressionType {
+    return expr.$op;
+  }
+  product(expr: Product): ExpressionType {
+    return expr.$op;
+  }
+  power(expr: Power): ExpressionType {
+    return expr.$op;
+  }
+  difference(expr: Difference): ExpressionType {
+    return expr.$op;
+  }
+  quotient(expr: Quotient): ExpressionType {
+    return expr.$op;
+  }
+  factorial(expr: Factorial): ExpressionType {
+    return expr.$op;
+  }
+  algebraicFn(expr: AlgebraicFn): ExpressionType {
+    return `fn-${expr.$op}`;
+  }
+}
+const $KIND = new KIND();
+
+/**
+ * This function returns the given `expression`’s kind.
+ */
+const kind = (expression: MathExpression) => (
+  expression.accept($KIND)
+);
+
+/**
+ * A class implementing the `nops` function.
+ */
+class NOPS implements ExprVisitor<number> {
+  int(expr: Int): number {
+    return 0;
+  }
+  rational(expr: Fraction): number {
+    return 0;
+  }
+  sym(expr: Sym): number {
+    return 0;
+  }
+  dne(expr: DNE): number {
+    return 0;
+  }
+  real(expr: Real): number {
+    return 0;
+  }
+  relation(expr: Relation): number {
+    return expr.$args.length;
+  }
+  sum(expr: Sum): number {
+    return expr.$args.length;
+  }
+  product(expr: Product): number {
+    return expr.$args.length;
+  }
+  power(expr: Power): number {
+    return expr.$args.length;
+  }
+  difference(expr: Difference): number {
+    return expr.$args.length;
+  }
+  quotient(expr: Quotient): number {
+    return expr.$args.length;
+  }
+  factorial(expr: Factorial): number {
+    return expr.$args.length;
+  }
+  algebraicFn(expr: AlgebraicFn): number {
+    return expr.$args.length;
+  }
+}
+const $NOPS = new NOPS();
+
+/**
+ * Returns the number of operands of the given
+ * `expression`. If the expression is not a compound
+ * expression (i.e., an atom), the number of operands
+ * is always `0`.
+ */
+const nops = (expression: MathExpression) => (
+  expression.accept($NOPS)
+);
+
+class OPERAND_AT implements ExprVisitor<MathExpression> {
+  $index: number;
+  constructor(index: number) {
+    this.$index = index - 1;
+  }
+  int(expr: Int): MathExpression {
+    return UNDEFINED;
+  }
+  rational(expr: Fraction): MathExpression {
+    return UNDEFINED;
+  }
+  sym(expr: Sym): MathExpression {
+    return UNDEFINED;
+  }
+  dne(expr: DNE): MathExpression {
+    return UNDEFINED;
+  }
+  real(expr: Real): MathExpression {
+    return UNDEFINED;
+  }
+  private argAt(expr: Compound) {
+    const out = expr.$args[this.$index];
+    if (out === undefined) {
+      return UNDEFINED;
+    } else {
+      return out;
+    }
+  }
+  relation(expr: Relation): MathExpression {
+    return this.argAt(expr);
+  }
+  sum(expr: Sum): MathExpression {
+    return this.argAt(expr);
+  }
+  product(expr: Product): MathExpression {
+    return this.argAt(expr);
+  }
+  power(expr: Power): MathExpression {
+    return this.argAt(expr);
+  }
+  difference(expr: Difference): MathExpression {
+    return this.argAt(expr);
+  }
+  quotient(expr: Quotient): MathExpression {
+    return this.argAt(expr);
+  }
+  factorial(expr: Factorial): MathExpression {
+    return this.argAt(expr);
+  }
+  algebraicFn(expr: AlgebraicFn): MathExpression {
+    return this.argAt(expr);
+  }
+}
+
+/**
+ * This function returns the `ith` operand of the given
+ * `expression`. If the expression is not a compound expression
+ * (i.e., an atom), the symbol `dne` is returned.
+ */
+const operand = (expression: MathExpression, ith: number) => (
+  expression.accept(new OPERAND_AT(ith))
+);
+
+/**
+ * This function simplifies a rational number. That is,
+ * given a rational number `a/b`, returns `a/b`
+ * in standard form (if an integer `n` is
+ * provided, returns `n`, since `n = n/1`, and `n/1`
+ * is in standard form).
+ */
+const simplifyRationalNumber = (
+  u: MathExpression,
+): Either<AlgebraError, (Int | Fraction)> => {
+  if (kind(u) === "integer") {
+    return right(u as Int);
+  } else if (kind(u) === "rational") {
+    let n = (u as Fraction).$n;
+    let d = (u as Fraction).$d;
+    if (mod(n, d) === 0) {
+      return right(int(iquot(n, d)));
+    } else {
+      let g = gcd(n, d);
+      if (d > 0) {
+        return right(rat(iquot(n, g), iquot(d, g)));
+      } else if (d < 0) {
+        return right(rat(iquot(-n, g), iquot(-d, g)));
+      } else {
+        return left(algebraError(
+          `Encountered a zero denominator`,
+          `call:simplifyRationalNumber`,
+        ));
+      }
+    }
+  } else {
+    return left(algebraError(
+      `Received an argument that is not an integer or a rational`,
+      `call:simplifyRationalNumber`,
+    ));
+  }
+};
+
+/**
+ * This function returns the numerator of the given expression.
+ */
+const numerOf = (
+  expression: Fraction | Int,
+): Either<AlgebraError, Int> => {
+  if (kind(expression) === "integer") {
+    return right(int((expression as Int).$n));
+  } else if (kind(expression) === "rational") {
+    return right(int((expression as Fraction).$n));
+  } else {
+    return left(algebraError(
+      `Only rationals and integers may be passed to numerOf`,
+      `call:numerOf`,
+    ));
+  }
+};
+
+/**
+ * This function returns the denominator of the given expression.
+ */
+const denomOf = (
+  expression: Fraction | Int,
+): Either<AlgebraError, Int> => {
+  if (kind(expression) === "integer") {
+    return right(int(1));
+  } else if (kind(expression) === "rational") {
+    return right(int((expression as Fraction).$d));
+  } else {
+    return left(algebraError(
+      `Only rationals and integers may be passed to denomOf`,
+      `call:denomOf`,
+    ));
+  }
+};
+
+/**
+ * Returns the rational difference v - w.
+ */
+const ratDiff = (v: Fraction | Int, w: Fraction | Int) => {
+  const nv = numerOf(v);
+  const dv = denomOf(v);
+  const nw = numerOf(w);
+  const dw = denomOf(w);
+  return nv.chain((NV) =>
+    dv.chain((DV) =>
+      nw.chain((NW) =>
+        dw.chain((DW) =>
+          right(rat(
+            (NV.$n * DW.$n) - (NW.$n * DV.$n),
+            DV.$n * DW.$n,
+          ))
+        )
+      )
+    )
+  );
+};
+
+/**
+ * Returns the rational sum v + w.
+ */
+const ratSum = (v: Fraction | Int, w: Fraction | Int) => {
+  const nv = numerOf(v);
+  const dv = denomOf(v);
+  const nw = numerOf(w);
+  const dw = denomOf(w);
+  return nv.chain((NV) =>
+    dv.chain((DV) =>
+      nw.chain((NW) =>
+        dw.chain((DW) =>
+          right(rat(
+            (NV.$n * DW.$n) + (NW.$n * DV.$n),
+            DV.$n * DW.$n,
+          ))
+        )
+      )
+    )
+  );
+};
+
+/**
+ * Returns the rational product v * w.
+ */
+const ratProd = (v: Fraction | Int, w: Fraction | Int) => {
+  const nv = numerOf(v);
+  const dv = denomOf(v);
+  const nw = numerOf(w);
+  const dw = denomOf(w);
+  return nv.chain((NV) =>
+    dv.chain((DV) =>
+      nw.chain((NW) =>
+        dw.chain((DW) =>
+          right(rat(
+            NV.$n * NW.$n,
+            DV.$n * DW.$n,
+          ))
+        )
+      )
+    )
+  );
+};
+
+/**
+ * Returns the rational quotient v/w.
+ */
+const ratQuot = (v: Fraction | Int, w: Fraction | Int) => {
+  const nv = numerOf(v);
+  const dv = denomOf(v);
+  const nw = numerOf(w);
+  const dw = denomOf(w);
+  return nv.chain((NV) =>
+    dv.chain((DV) =>
+      nw.chain((NW) =>
+        dw.chain((DW) =>
+          right(rat(
+            NV.$n * DW.$n,
+            NW.$n * DV.$n,
+          ))
+        )
+      )
+    )
+  );
+};
+
+/**
+ * This function evaluates a rational power `(a/b)^n`,
+ * where `n` is an integer.
+ */
+const ratPow = (
+  v: Fraction | Int,
+  n: Int,
+): Either<AlgebraError, (Fraction | Int)> => {
+  return numerOf(v).chain((numeratorV) => {
+    if (numeratorV.$n !== 0) {
+      if (n.$n > 0) {
+        return ratPow(v, int(n.$n - 1)).chain((s) => ratProd(s, v));
+      } else if (n.$n === 0) {
+        return right(int(1));
+      } else if (n.$n === -1) {
+        return numerOf(v).chain((nv) => ratQuot(v, nv));
+      } else if (n.$n < -1) {
+        return numerOf(v).chain((nv) => ratQuot(v, nv)).chain((s) =>
+          ratPow(s, int(-n.$n))
+        );
+      } else {
+        return left(algebraError(
+          `Unknown case: ${n.$n}`,
+          `call:ratPow`,
+        ));
+      }
+    } else {
+      if (n.$n >= 1) {
+        return right(int(0));
+      } else {
+        return left(algebraError(
+          `Integer powers must be greater than or equal to 1`,
+          `call:ratPow`,
+        ));
+      }
+    }
+  });
+};
+
+/**
+ * This is an auxiliary function used by simplifyRNE.
+ */
+const rneRec = (
+  u: MathExpression,
+): Either<AlgebraError, (Int | Fraction)> => {
+  if (kind(u) === "integer") {
+    return right(u as Int);
+  } else if (kind(u) === "rational") {
+    return denomOf(u as Fraction).chain((d) => {
+      if (d.$n === 0) {
+        return left(algebraError(
+          `Division by 0 encountered.`,
+          `rneRec`,
+        ));
+      } else {
+        return right(u as Fraction);
+      }
+    });
+  } else if (nops(u) === 1) {
+    return rneRec(operand(u, 1)).chain((v) => {
+      if (kind(v) === "+") {
+        return right(v);
+      } else if (kind(v) === "-") {
+        return ratProd(int(-1), v);
+      } else {
+        return left(algebraError(
+          `Received a unary RNE, but the operator is neither '+' nor '-'`,
+          `call:rneREC`,
+        ));
+      }
+    });
+  } else if (nops(u) === 2) {
+    if (
+      (kind(u) === "+") ||
+      (kind(u) === "*") ||
+      (kind(u) === "-") ||
+      (kind(u) === "/")
+    ) {
+      return rneRec(operand(u, 1)).chain((v) =>
+        rneRec(operand(u, 2)).chain((w) => {
+          if (kind(u) === "+") {
+            return ratSum(v, w);
+          } else if (kind(u) === "-") {
+            return ratDiff(v, w);
+          } else if (kind(u) === "*") {
+            return ratProd(v, w);
+          } else {
+            return ratQuot(v, w);
+          }
+        })
+      );
+    } else if (kind(u) === "^") {
+      return rneRec(operand(u, 1)).chain((v) => {
+        const w = operand(u, 2);
+        if (kind(w) === "integer") {
+          return ratPow(v, w as Int);
+        } else {
+          return left(algebraError(
+            `Non-integer exponent passed`,
+            `call:rneREC`,
+          ));
+        }
+      });
+    } else {
+      return left(algebraError(
+        `${u.toString()} is not an RNE.`,
+        `call:rneREC`,
+      ));
+    }
+  } else {
+    return left(algebraError(
+      `${u.toString()} is not an RNE.`,
+      `call:rneREC`,
+    ));
+  }
+};
+
+/**
+ * This function returns true if the given mathematical
+ * expression is a rational number expression.
+ */
+const isRNE = (u: MathExpression): boolean => {
+  const k = kind(u);
+  return (
+    // RNE 1 : u is an integer
+    k === "integer" ||
+    // RNE 2 : u is a rational
+    k === "rational" ||
+    // RNE 3: u is a unary or binary sum with operands that are RNEs
+    (kind(u) === "+") && (
+        ((u as Sum).$args.length === 2) ||
+        ((u as Sum).$args.length === 1)
+      ) &&
+      ((u as Sum).$args.reduce((p, c) => p && isRNE(c), true)) ||
+    // RNE 4: u is a unary or binary difference with operands that are RNEs
+    // - Differences always have a length of 2.
+    (kind(u) === "-") &&
+      ((u as Difference).$args.reduce((p, c) => p && isRNE(c), true)) ||
+    // RNE 5 : u is a binary product with operands that are RNEs
+
+    (kind(u) === "*") && (
+        (u as Product).$args.length === 2
+      ) &&
+      ((u as Product).$args.reduce((p, c) => p && isRNE(c), true)) ||
+    // RNE 6 : u is a quotient with operands that are RNEs
+
+    (kind(u) === "/") &&
+      ((u as Quotient).$args.reduce((p, c) => p && isRNE(c), true)) ||
+    // RNE 7 : u is a power with a base that is an RNE and an exponent that is an integer
+
+    (kind(u) === "^") && isRNE((u as Power).left()) &&
+      (kind((u as Power).right()) === "integer")
+  );
+};
+
+/**
+ * This function simplifies a rational number expression.
+ */
+const simplifyRNE = (u: MathExpression) => {
+  if (!isRNE(u)) {
+    return left(algebraError(
+      `Non-RNE passed to rne`,
+      `call:rne`,
+    ));
+  } else {
+    return rneRec(u).chain((v) => simplifyRationalNumber(v));
+  }
+};
+
+const order = (a: MathExpression, b: MathExpression) => {
+};
 
 interface Visitor<T> {
   intExpr(expr: IntExpr): T;
@@ -3903,14 +5424,49 @@ function syntaxAnalysis(code: string) {
 
 type RuntimeValue =
   | Primitive
-  | Callable
   | ReturnValue
+  | Callable
   | RealVector
   | RealMatrix
   | KlassInstance
   | Fn
-  | MSet<RuntimeValue>
+  | RSet
   | RuntimeValue[];
+
+/**
+ * Returns a string representation of a given
+ * runtime value.
+ */
+function strof(value: RuntimeValue): string {
+  // deno-fmt-ignore
+  switch (true) {
+    case (value === null): return `nil`;
+    case (typeof value === 'string'): return `"${value}"`;
+    case (typeof value === 'boolean'):
+    case (typeof value === 'number'): return `${value}`;
+    case (isRSet(value)):
+    case (isRealMatrix(value)):
+    case (isRealVector(value)):
+    case (value instanceof Callable):
+    case (value instanceof KlassInstance):
+    case (value instanceof Fn):
+    case (isFrac(value)):
+    case (isScinum(value)): return value.toString();
+    case (isReturnValue(value)): return strof(value.$value)
+    case (Array.isArray(value)): {
+      let out = '[';
+      for (let i = 0; i < value.length; i++) {
+        out += strof(value[i]);
+        if (i !== value.length-1) {
+          out += ',';
+        }
+      }
+      out += ']';
+      return out;
+    }
+    default: return `UNKNOWN Runtime Value: ${value}`;
+  }
+}
 
 class Environment<T> {
   $values: Map<string, T>;
@@ -4303,9 +5859,13 @@ class ReturnValue {
 const returnValue = (value: RuntimeValue) => (
   new ReturnValue(value)
 );
+const isReturnValue = (x: any): x is ReturnValue => (
+  x instanceof ReturnValue
+);
 
 abstract class Callable {
   abstract call(interpreter: Interpreter, args: RuntimeValue[]): RuntimeValue;
+  abstract toString(): string;
 }
 
 /**
@@ -4319,6 +5879,9 @@ class NativeFn extends Callable {
   }
   call(interpreter: Interpreter, args: RuntimeValue[]): RuntimeValue {
     return this.$f(...args);
+  }
+  toString(): string {
+    return `${this.$f.name}`;
   }
 }
 
@@ -4337,6 +5900,10 @@ class Fn extends Callable {
   private $closure: Environment<RuntimeValue>;
   private $declaration: FnDefStmt;
   private $isInitializer: boolean;
+  toString(): string {
+    const name = this.$declaration.$name.$lexeme;
+    return `fn:${name}`;
+  }
   constructor(
     closure: Environment<RuntimeValue>,
     declaration: FnDefStmt,
@@ -4450,7 +6017,7 @@ class Klass extends Callable {
     }
   }
   toString() {
-    return name;
+    return this.$name;
   }
   call(interpreter: Interpreter, args: RuntimeValue[]): RuntimeValue {
     const instance = new KlassInstance(this);
@@ -4588,8 +6155,8 @@ class Interpreter implements Visitor<RuntimeValue> {
     }
     const list = this.evaluate(expr.$list);
     const is_array = Array.isArray(list);
-    const is_vector = isVector(list);
-    const is_matrix = isMatrix(list);
+    const is_vector = isRealVector(list);
+    const is_matrix = isRealMatrix(list);
     if (is_array || is_vector || is_matrix) {
       if (index > list.length) {
         throw runtimeError(
@@ -4686,7 +6253,7 @@ class Interpreter implements Visitor<RuntimeValue> {
     const vectors: RealVector[] = [];
     for (let i = 0; i < expr.$vectors.length; i++) {
       const v = this.evaluate(expr.$vectors[i]);
-      if (!isVector(v)) {
+      if (!isRealVector(v)) {
         throw runtimeError(
           `Matrices may only have vector elements`,
           `interpreting a matrix expression`,
@@ -5031,1492 +6598,6 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
       return out.unwrap();
     },
   };
-};
-
-type RelationOp = "<" | ">" | "=" | "!=" | "<=" | ">=";
-type AlgebraicOp = "+" | "-" | "/" | "*" | "!" | "^";
-type ExpressionType =
-  | "symbol"
-  | "integer"
-  | "real"
-  | "rational"
-  | "dne"
-  | RelationOp
-  | `fn-${string}`
-  | AlgebraicOp;
-
-interface ExprVisitor<T> {
-  int(expr: Int): T;
-  rational(expr: Rational): T;
-  sym(expr: Sym): T;
-  dne(expr: DNE): T;
-  real(expr: Real): T;
-  relation(expr: Relation): T;
-  sum(expr: Sum): T;
-  product(expr: Product): T;
-  power(expr: Power): T;
-  difference(expr: Difference): T;
-  quotient(expr: Quotient): T;
-  factorial(expr: Factorial): T;
-  algebraicFn(expr: AlgebraicFn): T;
-}
-
-/** An object corresponding to a mathematical expression. */
-abstract class MathExpression {
-  /** The parenthesis level of this expression. */
-  $parenLevel: number = 0;
-  parend() {
-    this.$parenLevel++;
-    return this;
-  }
-  /** Sets the parenthesis level of this expression to the provided level. */
-  toParenLevel(level: number) {
-    this.$parenLevel = level;
-    return this;
-  }
-  /** Sets the parenthesis level of this expression to 0. */
-  unParen() {
-    this.$parenLevel = 0;
-    return this;
-  }
-  /**
-   * Returns true if this expression is an algebraic
-   * expression, false otherwise.
-   */
-  abstract isAlgebraic(): this is AlgebraicExpression;
-  abstract toString(): string;
-  abstract accept<T>(visitor: ExprVisitor<T>): T;
-}
-
-/** An object corresponding to an atomic expression. */
-abstract class Atom extends MathExpression {}
-
-type AlgebraicExpression =
-  | Int
-  | Sym
-  | Sum
-  | Power
-  | Difference
-  | Quotient
-  | Factorial
-  | AlgebraicFn;
-
-/** An object corresponding to an integer. */
-class Int extends Atom {
-  $n: number;
-  constructor(value: number) {
-    super();
-    this.$n = floor(value);
-  }
-  toString(): string {
-    return `${this.$n}`;
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.int(this);
-  }
-  /**
-   * Returns this integer as a rational.
-   */
-  toRat() {
-    return rat(this.$n, 1);
-  }
-}
-
-/** Returns a new integer. */
-const int = (value: number) => (new Int(value));
-
-/** An object corresponding to a rational number. */
-class Rational extends Atom {
-  $n: number;
-  $d: number;
-  constructor(n: number, d: number) {
-    super();
-    this.$n = floor(n);
-    this.$d = floor(d);
-  }
-  toString(): string {
-    return `${this.$n}|${this.$d}`;
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.rational(this);
-  }
-  /** Returns this rational as a real (floating point number). */
-  toReal() {
-    return real(this.$n / this.$d);
-  }
-}
-
-/** Returns a new rational. */
-const rat = (numerator: number, denominator: number) => (
-  new Rational(numerator, denominator)
-);
-
-/** An object corresponding to a symbol. */
-class Sym extends Atom {
-  $s: string;
-  constructor(symbol: string) {
-    super();
-    this.$s = symbol;
-  }
-  toString(): string {
-    return this.$s;
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.sym(this);
-  }
-}
-
-/** Returns a new symbol. */
-const sym = (symbol: string) => (new Sym(symbol));
-const isSym = (x: any): x is Sym => (
-  x instanceof Sym
-);
-
-/**
- * An object corresponding to "Does Not Exist."
- * At runtime, this is equivalent to the JavaScript
- * "undefined".
- */
-class DNE extends Atom {
-  constructor() {
-    super();
-  }
-  toString(): string {
-    return `DNE`;
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.dne(this);
-  }
-}
-const UNDEFINED = new DNE();
-
-/** An object corresponding to a real number. */
-class Real extends Atom {
-  $n: number;
-  constructor(value: number) {
-    super();
-    this.$n = value;
-  }
-  toString(): string {
-    return `${this.$n}`;
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.real(this);
-  }
-  /**
-   * Returns this real as an approximated rational.
-   */
-  toRat(tolerance: number = 0.00001) {
-    let x = this.$n;
-    if (x === 0) {
-      return rat(0, 1);
-    }
-    if (x < 0) {
-      x = -x;
-    }
-    let num = 1;
-    let den = 1;
-    const iterate = () => {
-      let R = num / den;
-      if ((abs(R - x) / x) < tolerance) {
-        return;
-      }
-      if (R < x) {
-        num++;
-      } else den++;
-      iterate();
-    };
-    iterate();
-    return rat(num, den);
-  }
-}
-
-/** Returns a new real number. */
-const real = (value: number) => (new Real(value));
-
-/**
- * An object corresponding to a compound
- * expression. All compound expressions
- * comprise of an operator and a list
- * of arguments.
- */
-abstract class Compound extends MathExpression {
-  $op: string;
-  $args: MathExpression[];
-  constructor(op: string, args: MathExpression[]) {
-    super();
-    this.$op = op;
-    this.$args = args;
-  }
-}
-
-/** An object corresponding to a relational expression. */
-class Relation extends Compound {
-  $args: [MathExpression, MathExpression];
-  $op: RelationOp;
-  constructor(op: RelationOp, left: MathExpression, right: MathExpression) {
-    super(op, [left, right]);
-    this.$args = [left, right];
-    this.$op = op;
-  }
-  left() {
-    return this.$args[0];
-  }
-  right() {
-    return this.$args[1];
-  }
-  toString(): string {
-    const L = this.left().toString();
-    const R = this.right().toString();
-    const op = this.$op;
-    if (this.$parenLevel) {
-      return `(${L} ${op} ${R})`;
-    } else {
-      return `${L} ${op} ${R}`;
-    }
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return false;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.relation(this);
-  }
-}
-
-/** Returns a new relational expression. */
-const relation = (
-  op: RelationOp,
-  left: MathExpression,
-  right: MathExpression,
-) => (
-  new Relation(op, left, right)
-);
-
-/**
- * An object corresponding to a sum.
- * Sums may have an arbitrary number of
- * arguments.
- */
-class Sum extends Compound {
-  $args: AlgebraicExpression[];
-  $op: "+" = "+";
-  constructor(args: AlgebraicExpression[]) {
-    super("+", args);
-    this.$args = args;
-  }
-  toString(): string {
-    let out = "";
-    for (let i = 0; i < this.$args.length; i++) {
-      out += this.$args[i].toString();
-      if (i !== this.$args.length - 1) {
-        out += " + ";
-      }
-    }
-    if (this.$parenLevel) {
-      return `(${out})`;
-    } else {
-      return out;
-    }
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.sum(this);
-  }
-}
-
-/** Returns a new sum expression. */
-const sum = (args: AlgebraicExpression[]) => (
-  new Sum(args)
-);
-
-/** Returns true if the given object is a sum expression. */
-const isSum = (obj: any): obj is Sum => (obj instanceof Sum);
-
-/**
- * An object corresponding to a product.
- * Products may have an arbitrary number
- * of arguments.
- */
-class Product extends Compound {
-  $args: AlgebraicExpression[];
-  $op: "*" = "*";
-  constructor(args: AlgebraicExpression[]) {
-    super("*", args);
-
-    this.$args = args;
-  }
-  toString(): string {
-    let out = "";
-    for (let i = 0; i < this.$args.length; i++) {
-      out += this.$args[i].toString();
-      if (i !== this.$args.length - 1) {
-        out += " * ";
-      }
-    }
-    if (this.$parenLevel) {
-      return `(${out})`;
-    } else {
-      return out;
-    }
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.product(this);
-  }
-}
-
-/** Returns a new product expression. */
-const product = (args: AlgebraicExpression[]) => (new Product(args));
-
-/** Returns true if the given object is a product. */
-const isProduct = (obj: any): obj is Product => (obj instanceof Product);
-
-/**
- * An object corresponding to a power expression.
- * The `^` operator is a binary infix operator.
- * That is, `^` always takes two, and only two,
- * arguments.
- */
-class Power extends Compound {
-  $args: [AlgebraicExpression, AlgebraicExpression];
-  $op: "^" = "^";
-  constructor(base: AlgebraicExpression, exponent: AlgebraicExpression) {
-    super("^", [base, exponent]);
-    this.$args = [base, exponent];
-  }
-  left() {
-    return this.$args[0];
-  }
-  right() {
-    return this.$args[1];
-  }
-  toString(): string {
-    const L = this.left().toString();
-    const R = this.right().toString();
-    if (this.$parenLevel) {
-      return `(${L}^${R})`;
-    } else {
-      return `${L}^${R}`;
-    }
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.power(this);
-  }
-}
-
-/** Returns a new power expression. */
-const power = (
-  base: AlgebraicExpression,
-  exponent: AlgebraicExpression,
-) => (new Power(base, exponent));
-
-/** An object corresponding to a difference expression. */
-class Difference extends Compound {
-  $args: [AlgebraicExpression, AlgebraicExpression];
-  $op: "-" = "-";
-  constructor(left: AlgebraicExpression, right: AlgebraicExpression) {
-    super("-", [left, right]);
-    this.$args = [left, right];
-  }
-  left() {
-    return this.$args[0];
-  }
-  right() {
-    return this.$args[1];
-  }
-  toString(): string {
-    const L = this.left().toString();
-    const R = this.right().toString();
-    if (this.$parenLevel) {
-      return `(${L} - ${R})`;
-    } else {
-      return `${L} - ${R}`;
-    }
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.difference(this);
-  }
-}
-
-/** Returns the difference expression `left - right`. */
-const diff = (left: AlgebraicExpression, right: AlgebraicExpression) => (
-  new Difference(left, right)
-);
-
-/** Returns the negation of the given expression. */
-const neg = (expression: AlgebraicExpression) => (
-  product([int(-1), expression])
-);
-
-/** An object corresponding to a quotient. */
-class Quotient extends Compound {
-  $args: [AlgebraicExpression, AlgebraicExpression];
-  $op: "/" = "/";
-  constructor(a: AlgebraicExpression, b: AlgebraicExpression) {
-    super("/", [a, b]);
-    this.$args = [a, b];
-  }
-  left() {
-    return this.$args[0];
-  }
-  right() {
-    return this.$args[1];
-  }
-  toString(): string {
-    const L = this.left().toString();
-    const R = this.right().toString();
-    if (this.$parenLevel) {
-      return `(${L}/${R})`;
-    } else {
-      return `${L}/${R}`;
-    }
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.quotient(this);
-  }
-}
-
-/** Returns a new quotient expression. */
-const quotient = (a: AlgebraicExpression, b: AlgebraicExpression) => (
-  new Quotient(a, b)
-);
-
-/** An object corresponding to a factorial. */
-class Factorial extends Compound {
-  $args: [AlgebraicExpression];
-  $op: "!" = "!";
-  constructor(arg: AlgebraicExpression) {
-    super("!", [arg]);
-    this.$args = [arg];
-  }
-  arg() {
-    return this.$args[0];
-  }
-  toString(): string {
-    const arg = this.arg().toString();
-    if (this.$parenLevel) {
-      return `(${arg}!)`;
-    } else {
-      return `${arg}!`;
-    }
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.factorial(this);
-  }
-}
-
-/** Returns a new factorial expression. */
-const factorial = (arg: AlgebraicExpression) => (new Factorial(arg));
-
-/** A class corresponding to a function call. */
-class AlgebraicFn extends Compound {
-  $args: AlgebraicExpression[];
-  constructor(functionName: string, args: AlgebraicExpression[]) {
-    super(functionName, args);
-    this.$args = args;
-  }
-  toString(): string {
-    const name = this.$op;
-    let out = `${name}(`;
-    for (let i = 0; i < this.$args.length; i++) {
-      out += this.$args[i].toString();
-      if (i !== this.$args.length - 1) {
-        out += ",";
-      }
-    }
-    out += ")";
-    if (this.$parenLevel) {
-      return `(${out})`;
-    } else {
-      return out;
-    }
-  }
-  isAlgebraic(): this is AlgebraicExpression {
-    return true;
-  }
-  accept<T>(visitor: ExprVisitor<T>): T {
-    return visitor.algebraicFn(this);
-  }
-}
-
-/** Returns a new function call expression. */
-const fun = (functionName: string, args: AlgebraicExpression[]) => (
-  new AlgebraicFn(functionName, args)
-);
-
-/**
- * Given the provided `expression`,
- * returns the parsed algebraic syntax tree.
- */
-function exp(expression: string) {
-  const state = enstate(expression);
-
-  /**
-   * Parses a symbol.
-   */
-  const symbol: ParseRule<MathExpression> = (op) => {
-    if (!op.isIdentifier()) {
-      return state.error(
-        `Expected symbol`,
-        `parsing symbol`,
-      );
-    } else {
-      return state.expr(sym(op.$lexeme));
-    }
-  };
-
-  /**
-   * Parses a floating point number.
-   */
-  const float: ParseRule<MathExpression> = (op) => {
-    if (!op.isNumericToken()) {
-      return state.error(
-        `Expected integer`,
-        `parsing integer`,
-      );
-    } else {
-      return state.expr(real(op.$literal));
-    }
-  };
-
-  /**
-   * Parses an integer.
-   */
-  const integer: ParseRule<MathExpression> = (op) => {
-    if (!op.isNumericToken()) {
-      return state.error(
-        `Expected integer`,
-        `parsing integer`,
-      );
-    } else {
-      return state.expr(int(op.$literal));
-    }
-  };
-
-  /**
-   * Parses a rational number.
-   */
-  const rational: ParseRule<MathExpression> = (op) => {
-    if (!op.isFraction()) {
-      return state.error(
-        `Expected a rational`,
-        `parsing a rational`,
-      );
-    } else {
-      const literal = op.$literal;
-      return state.expr(rat(literal.$n, literal.$d));
-    }
-  };
-
-  /**
-   * Parses a negation.
-   */
-  const negation: ParseRule<MathExpression> = (op) => {
-    const p = precOf(op.$type);
-    const e = expr(p);
-    if (e.isLeft()) {
-      return e;
-    }
-    const arg = e.unwrap();
-    if (!arg.isAlgebraic()) {
-      return state.error(
-        `The unary '-' may only be used with algebraic expressions`,
-        `parsing a negation`,
-      );
-    }
-    return state.expr(neg(arg));
-  };
-
-  /**
-   * Parses a difference expression.
-   */
-  const diffExpr: ParseRule<MathExpression> = (op, left) => {
-    if (!left.isAlgebraic()) {
-      return state.error(
-        `Only algebraic expressions may be used with '-'`,
-        "parsing a quotient",
-      );
-    }
-    const rhs = expr(precOf(op.$type));
-    if (rhs.isLeft()) {
-      return rhs;
-    }
-    const right = rhs.unwrap();
-    if (!right.isAlgebraic()) {
-      return state.error(
-        `Only algebraic expressions may be used with '-'`,
-        "parsing a quotient",
-      );
-    }
-    const out = diff(left, right);
-    return state.expr(out);
-  };
-
-  /**
-   * Parses a quotient expression.
-   */
-  const quotientExpr: ParseRule<MathExpression> = (op, left) => {
-    if (!left.isAlgebraic()) {
-      return state.error(
-        `Only algebraic expressions may be used with '/'`,
-        "parsing a quotient",
-      );
-    }
-    const rhs = expr(precOf(op.$type));
-    if (rhs.isLeft()) {
-      return rhs;
-    }
-    const right = rhs.unwrap();
-    if (!right.isAlgebraic()) {
-      return state.error(
-        `Only algebraic expressions may be used with '/'`,
-        "parsing a quotient",
-      );
-    }
-    const out = quotient(left, right);
-    return state.expr(out);
-  };
-
-  /**
-   * Parses a power expression.
-   */
-  const powerExpr: ParseRule<MathExpression> = (op, left) => {
-    if (!left.isAlgebraic()) {
-      return state.error(
-        `Only algebraic expressions may be used with '^'`,
-        `parsing a power`,
-      );
-    }
-    const rhs = expr(precOf(op.$type));
-    if (rhs.isLeft()) {
-      return rhs;
-    }
-    const right = rhs.unwrap();
-    if (!right.isAlgebraic()) {
-      return state.error(
-        `Only algebraic expressions may be used with '^'`,
-        `parsing a power`,
-      );
-    }
-    const out = power(left, right);
-    return state.expr(out);
-  };
-
-  /**
-   * Parses a factorial expression.
-   */
-  const factorialExpr: ParseRule<MathExpression> = (op, arg) => {
-    if (!arg.isAlgebraic()) {
-      return state.error(
-        `Only algebraic expressions may be used with '!'`,
-        `parsing a factorial`,
-      );
-    }
-    const out = factorial(arg);
-    return state.expr(out);
-  };
-
-  /**
-   * Parses a production expression.
-   */
-  const productExpr: ParseRule<MathExpression> = (op, left) => {
-    const rhs = expr(precOf(op.$type));
-    if (rhs.isLeft()) {
-      return rhs;
-    }
-    const right = rhs.unwrap();
-    if (!left.isAlgebraic() || !right.isAlgebraic()) {
-      return state.error(
-        `Only algebraic expressions may be used with '*'`,
-        `parsing a product`,
-      );
-    }
-    const args: AlgebraicExpression[] = [];
-    if (isProduct(left)) {
-      args.push(...left.$args);
-    } else {
-      args.push(left);
-    }
-    if (isProduct(right)) {
-      args.push(...right.$args);
-    } else {
-      args.push(right);
-    }
-    const out = product(args);
-    return state.expr(out);
-  };
-
-  /**
-   * Parses a sum expression.
-   */
-  const sumExpr: ParseRule<MathExpression> = (op, left) => {
-    const rhs = expr(precOf(op.$type));
-    if (rhs.isLeft()) {
-      return rhs;
-    }
-    const right = rhs.unwrap();
-    if (!left.isAlgebraic() || !right.isAlgebraic()) {
-      return state.error(
-        `Only algebraic expressions may be used with '+'`,
-        `parsing a sum`,
-      );
-    }
-    const args: AlgebraicExpression[] = [];
-    if (isSum(left)) {
-      args.push(...left.$args);
-    } else {
-      args.push(left);
-    }
-    if (isSum(right)) {
-      args.push(...right.$args);
-    } else {
-      args.push(right);
-    }
-    const out = sum(args);
-    return state.expr(out);
-  };
-
-  /**
-   * Parses a call expression.
-   */
-  const callExpr: ParseRule<MathExpression> = (op, lastNode) => {
-    const callee = lastNode;
-    if (!isSym(callee)) {
-      return state.error(
-        `Expected a symbol for a function name`,
-        `parsing a call expression`,
-      );
-    }
-    const args: AlgebraicExpression[] = [];
-    if (!state.check(TokenType.RIGHT_PAREN)) {
-      do {
-        const e = expr();
-        if (e.isLeft()) {
-          return e;
-        }
-        const element = e.unwrap();
-        if (!element.isAlgebraic()) {
-          return state.error(
-            `Only algebraic expressions may be passed to calls`,
-            `parsing a call expression`,
-          );
-        }
-        args.push(element);
-      } while (state.nextIs(TokenType.COMMA));
-    }
-
-    if (!state.nextIs(TokenType.RIGHT_PAREN)) {
-      return state.error(
-        `Expected a “)” to close the arguments`,
-        `parsing a function call`,
-      );
-    }
-    const out = fun(callee.$s, args);
-    return state.expr(out);
-  };
-
-  /** Parses a parenthesized expression. */
-  const primary: ParseRule<MathExpression> = () => {
-    const inner = expr();
-    if (inner.isLeft()) {
-      return inner;
-    }
-    if (!state.nextIs(TokenType.RIGHT_PAREN)) {
-      return state.error(
-        `Expected a closing “)”`,
-        `parsing a parenthesized expression`,
-      );
-    }
-    return state.expr(inner.unwrap().parend());
-  };
-
-  /**
-   * Alias for BP.NONE, corresponding
-   * to a binding power of nothing.
-   * This is used purely as a placeholder
-   * for the ParseRuleTable.
-   */
-  const ___o = BP.NONE;
-
-  /**
-   * A parse rule that always returns an
-   * error. This is used purely as a
-   * placeholder for empty slots in the
-   * parse rules table.
-   */
-  const ___: ParseRule<MathExpression> = (t) => {
-    if (state.$error !== null) {
-      return left(state.$error);
-    } else {
-      return state.error(
-        `Unrecognized lexeme in algebraic parser: ${t.$lexeme}`,
-        `algebraic expression`,
-      );
-    }
-  };
-  const rules: ParseRuleTable<MathExpression> = {
-    [TokenType.PLUS]: [___, sumExpr, BP.SUM],
-    [TokenType.MINUS]: [negation, diffExpr, BP.DIFFERENCE],
-    [TokenType.SLASH]: [___, quotientExpr, BP.QUOTIENT],
-    [TokenType.STAR]: [___, productExpr, BP.PRODUCT],
-    [TokenType.CARET]: [___, powerExpr, BP.POWER],
-    [TokenType.LEFT_PAREN]: [primary, callExpr, BP.CALL],
-    [TokenType.RIGHT_PAREN]: [___, ___, ___o],
-    [TokenType.IDENTIFIER]: [symbol, ___, BP.LITERAL],
-    [TokenType.INT]: [integer, ___, BP.LITERAL],
-    [TokenType.FLOAT]: [float, ___, BP.LITERAL],
-    [TokenType.FRACTION]: [rational, ___, BP.LITERAL],
-    [TokenType.BANG]: [___, factorialExpr, BP.POSTFIX],
-
-    [TokenType.LEFT_BRACE]: [___, ___, ___o],
-    [TokenType.RIGHT_BRACE]: [___, ___, ___o],
-    [TokenType.LEFT_BRACKET]: [___, ___, ___o],
-    [TokenType.RIGHT_BRACKET]: [___, ___, ___o],
-    [TokenType.COMMA]: [___, ___, ___o],
-    [TokenType.DOT]: [___, ___, ___o],
-    [TokenType.COLON]: [___, ___, ___o],
-    [TokenType.SEMICOLON]: [___, ___, ___o],
-    [TokenType.VBAR]: [___, ___, ___o],
-    [TokenType.AMPERSAND]: [___, ___, ___o],
-    [TokenType.TILDE]: [___, ___, ___o],
-
-    [TokenType.MINUS_MINUS]: [___, ___, ___o],
-    [TokenType.PLUS_PLUS]: [___, ___, ___o],
-    [TokenType.PERCENT]: [___, ___, ___o],
-    [TokenType.EQUAL]: [___, ___, ___o],
-    [TokenType.EQUAL_EQUAL]: [___, ___, ___o],
-    [TokenType.BANG_EQUAL]: [___, ___, ___o],
-    [TokenType.LESS]: [___, ___, ___o],
-    [TokenType.GREATER]: [___, ___, ___o],
-    [TokenType.LESS_EQUAL]: [___, ___, ___o],
-    [TokenType.GREATER_EQUAL]: [___, ___, ___o],
-    [TokenType.AND]: [___, ___, ___o],
-    [TokenType.OR]: [___, ___, ___o],
-    [TokenType.NOT]: [___, ___, ___o],
-    [TokenType.REM]: [___, ___, ___o],
-    [TokenType.MOD]: [___, ___, ___o],
-    [TokenType.DIV]: [___, ___, ___o],
-    [TokenType.NOR]: [___, ___, ___o],
-    [TokenType.XOR]: [___, ___, ___o],
-    [TokenType.XNOR]: [___, ___, ___o],
-    [TokenType.NAND]: [___, ___, ___o],
-
-    [TokenType.SCIENTIFIC_NUMBER]: [___, ___, ___o],
-    [TokenType.STRING]: [___, ___, ___o],
-    [TokenType.CLASS]: [___, ___, ___o],
-    [TokenType.IF]: [___, ___, ___o],
-    [TokenType.ELSE]: [___, ___, ___o],
-    [TokenType.TRUE]: [___, ___, ___o],
-    [TokenType.FALSE]: [___, ___, ___o],
-    [TokenType.FOR]: [___, ___, ___o],
-    [TokenType.FN]: [___, ___, ___o],
-    [TokenType.NIL]: [___, ___, ___o],
-    [TokenType.PRINT]: [___, ___, ___o],
-    [TokenType.RETURN]: [___, ___, ___o],
-    [TokenType.SUPER]: [___, ___, ___o],
-    [TokenType.THIS]: [___, ___, ___o],
-    [TokenType.WHILE]: [___, ___, ___o],
-    [TokenType.NUMERIC_CONSTANT]: [___, ___, ___o],
-    [TokenType.LET]: [___, ___, ___o],
-    [TokenType.VAR]: [___, ___, ___o],
-    [TokenType.ERROR]: [___, ___, ___o],
-    [TokenType.EMPTY]: [___, ___, ___o],
-    [TokenType.END]: [___, ___, ___o],
-  };
-  /**
-   * Returns the prefix rule associated
-   * with the given token type.
-   */
-  const prefixRule = (type: TokenType): ParseRule<MathExpression> => (
-    rules[type][0]
-  );
-
-  /**
-   * Returns the infix rule associated
-   * with the given token type.
-   */
-  const infixRule = (type: TokenType): ParseRule<MathExpression> => (
-    rules[type][1]
-  );
-
-  /**
-   * Returns the precedence of the given
-   * token type.
-   */
-  const precOf = (type: TokenType): BP => (
-    rules[type][2]
-  );
-
-  /**
-   * Performs a Pratt parsing for an
-   * expression.
-   */
-  const expr = (minBP: BP = BP.LOWEST) => {
-    let token = state.next();
-    const prefix = prefixRule(token.$type);
-    let lhs = prefix(token, UNDEFINED);
-    if (lhs.isLeft()) {
-      return lhs;
-    }
-    while (minBP < precOf(state.$peek.$type)) {
-      if (state.atEnd()) {
-        break;
-      }
-      token = state.next();
-      const infix = infixRule(token.$type);
-      const rhs = infix(token, lhs.unwrap());
-      if (rhs.isLeft()) {
-        return rhs;
-      }
-      lhs = rhs;
-    }
-    return lhs;
-  };
-  const run = () => {
-    if (state.$error !== null) {
-      return left(state.$error);
-    } else {
-      return expr();
-    }
-  };
-  return run();
-}
-
-/**
- * A class implementing the `kind` function.
- */
-class KIND implements ExprVisitor<ExpressionType> {
-  int(expr: Int): ExpressionType {
-    return "integer";
-  }
-  rational(expr: Rational): ExpressionType {
-    return "rational";
-  }
-  sym(expr: Sym): ExpressionType {
-    return "symbol";
-  }
-  dne(expr: DNE): ExpressionType {
-    return "dne";
-  }
-  real(expr: Real): ExpressionType {
-    return "real";
-  }
-  relation(expr: Relation): ExpressionType {
-    return expr.$op;
-  }
-  sum(expr: Sum): ExpressionType {
-    return expr.$op;
-  }
-  product(expr: Product): ExpressionType {
-    return expr.$op;
-  }
-  power(expr: Power): ExpressionType {
-    return expr.$op;
-  }
-  difference(expr: Difference): ExpressionType {
-    return expr.$op;
-  }
-  quotient(expr: Quotient): ExpressionType {
-    return expr.$op;
-  }
-  factorial(expr: Factorial): ExpressionType {
-    return expr.$op;
-  }
-  algebraicFn(expr: AlgebraicFn): ExpressionType {
-    return `fn-${expr.$op}`;
-  }
-}
-const $KIND = new KIND();
-
-/**
- * This function returns the given `expression`’s kind.
- */
-const kind = (expression: MathExpression) => (
-  expression.accept($KIND)
-);
-
-/**
- * A class implementing the `nops` function.
- */
-class NOPS implements ExprVisitor<number> {
-  int(expr: Int): number {
-    return 0;
-  }
-  rational(expr: Rational): number {
-    return 0;
-  }
-  sym(expr: Sym): number {
-    return 0;
-  }
-  dne(expr: DNE): number {
-    return 0;
-  }
-  real(expr: Real): number {
-    return 0;
-  }
-  relation(expr: Relation): number {
-    return expr.$args.length;
-  }
-  sum(expr: Sum): number {
-    return expr.$args.length;
-  }
-  product(expr: Product): number {
-    return expr.$args.length;
-  }
-  power(expr: Power): number {
-    return expr.$args.length;
-  }
-  difference(expr: Difference): number {
-    return expr.$args.length;
-  }
-  quotient(expr: Quotient): number {
-    return expr.$args.length;
-  }
-  factorial(expr: Factorial): number {
-    return expr.$args.length;
-  }
-  algebraicFn(expr: AlgebraicFn): number {
-    return expr.$args.length;
-  }
-}
-const $NOPS = new NOPS();
-
-/**
- * Returns the number of operands of the given
- * `expression`. If the expression is not a compound
- * expression (i.e., an atom), the number of operands
- * is always `0`.
- */
-const nops = (expression: MathExpression) => (
-  expression.accept($NOPS)
-);
-
-class OPERAND_AT implements ExprVisitor<MathExpression> {
-  $index: number;
-  constructor(index: number) {
-    this.$index = index - 1;
-  }
-  int(expr: Int): MathExpression {
-    return UNDEFINED;
-  }
-  rational(expr: Rational): MathExpression {
-    return UNDEFINED;
-  }
-  sym(expr: Sym): MathExpression {
-    return UNDEFINED;
-  }
-  dne(expr: DNE): MathExpression {
-    return UNDEFINED;
-  }
-  real(expr: Real): MathExpression {
-    return UNDEFINED;
-  }
-  private argAt(expr: Compound) {
-    const out = expr.$args[this.$index];
-    if (out === undefined) {
-      return UNDEFINED;
-    } else {
-      return out;
-    }
-  }
-  relation(expr: Relation): MathExpression {
-    return this.argAt(expr);
-  }
-  sum(expr: Sum): MathExpression {
-    return this.argAt(expr);
-  }
-  product(expr: Product): MathExpression {
-    return this.argAt(expr);
-  }
-  power(expr: Power): MathExpression {
-    return this.argAt(expr);
-  }
-  difference(expr: Difference): MathExpression {
-    return this.argAt(expr);
-  }
-  quotient(expr: Quotient): MathExpression {
-    return this.argAt(expr);
-  }
-  factorial(expr: Factorial): MathExpression {
-    return this.argAt(expr);
-  }
-  algebraicFn(expr: AlgebraicFn): MathExpression {
-    return this.argAt(expr);
-  }
-}
-
-/**
- * This function returns the `ith` operand of the given
- * `expression`. If the expression is not a compound expression
- * (i.e., an atom), the symbol `dne` is returned.
- */
-const operand = (expression: MathExpression, ith: number) => (
-  expression.accept(new OPERAND_AT(ith))
-);
-
-/**
- * This function simplifies a rational number. That is,
- * given a rational number `a/b`, returns `a/b`
- * in standard form (if an integer `n` is
- * provided, returns `n`, since `n = n/1`, and `n/1`
- * is in standard form).
- */
-const simplifyRationalNumber = (
-  u: MathExpression,
-): Either<AlgebraError, (Int | Rational)> => {
-  if (kind(u) === "integer") {
-    return right(u as Int);
-  } else if (kind(u) === "rational") {
-    let n = (u as Rational).$n;
-    let d = (u as Rational).$d;
-    if (mod(n, d) === 0) {
-      return right(int(iquot(n, d)));
-    } else {
-      let g = gcd(n, d);
-      if (d > 0) {
-        return right(rat(iquot(n, g), iquot(d, g)));
-      } else if (d < 0) {
-        return right(rat(iquot(-n, g), iquot(-d, g)));
-      } else {
-        return left(algebraError(
-          `Encountered a zero denominator`,
-          `call:simplifyRationalNumber`,
-        ));
-      }
-    }
-  } else {
-    return left(algebraError(
-      `Received an argument that is not an integer or a rational`,
-      `call:simplifyRationalNumber`,
-    ));
-  }
-};
-
-/**
- * This function returns the numerator of the given expression.
- */
-const numerOf = (
-  expression: Rational | Int,
-): Either<AlgebraError, Int> => {
-  if (kind(expression) === "integer") {
-    return right(int((expression as Int).$n));
-  } else if (kind(expression) === "rational") {
-    return right(int((expression as Rational).$n));
-  } else {
-    return left(algebraError(
-      `Only rationals and integers may be passed to numerOf`,
-      `call:numerOf`,
-    ));
-  }
-};
-
-/**
- * This function returns the denominator of the given expression.
- */
-const denomOf = (
-  expression: Rational | Int,
-): Either<AlgebraError, Int> => {
-  if (kind(expression) === "integer") {
-    return right(int(1));
-  } else if (kind(expression) === "rational") {
-    return right(int((expression as Rational).$d));
-  } else {
-    return left(algebraError(
-      `Only rationals and integers may be passed to denomOf`,
-      `call:denomOf`,
-    ));
-  }
-};
-
-/**
- * Returns the rational difference v - w.
- */
-const ratDiff = (v: Rational | Int, w: Rational | Int) => {
-  const nv = numerOf(v);
-  const dv = denomOf(v);
-  const nw = numerOf(w);
-  const dw = denomOf(w);
-  return nv.chain((NV) =>
-    dv.chain((DV) =>
-      nw.chain((NW) =>
-        dw.chain((DW) =>
-          right(rat(
-            (NV.$n * DW.$n) - (NW.$n * DV.$n),
-            DV.$n * DW.$n,
-          ))
-        )
-      )
-    )
-  );
-};
-
-/**
- * Returns the rational sum v + w.
- */
-const ratSum = (v: Rational | Int, w: Rational | Int) => {
-  const nv = numerOf(v);
-  const dv = denomOf(v);
-  const nw = numerOf(w);
-  const dw = denomOf(w);
-  return nv.chain((NV) =>
-    dv.chain((DV) =>
-      nw.chain((NW) =>
-        dw.chain((DW) =>
-          right(rat(
-            (NV.$n * DW.$n) + (NW.$n * DV.$n),
-            DV.$n * DW.$n,
-          ))
-        )
-      )
-    )
-  );
-};
-
-/**
- * Returns the rational product v * w.
- */
-const ratProd = (v: Rational | Int, w: Rational | Int) => {
-  const nv = numerOf(v);
-  const dv = denomOf(v);
-  const nw = numerOf(w);
-  const dw = denomOf(w);
-  return nv.chain((NV) =>
-    dv.chain((DV) =>
-      nw.chain((NW) =>
-        dw.chain((DW) =>
-          right(rat(
-            NV.$n * NW.$n,
-            DV.$n * DW.$n,
-          ))
-        )
-      )
-    )
-  );
-};
-
-/**
- * Returns the rational quotient v/w.
- */
-const ratQuot = (v: Rational | Int, w: Rational | Int) => {
-  const nv = numerOf(v);
-  const dv = denomOf(v);
-  const nw = numerOf(w);
-  const dw = denomOf(w);
-  return nv.chain((NV) =>
-    dv.chain((DV) =>
-      nw.chain((NW) =>
-        dw.chain((DW) =>
-          right(rat(
-            NV.$n * DW.$n,
-            NW.$n * DV.$n,
-          ))
-        )
-      )
-    )
-  );
-};
-
-/**
- * This function evaluates a rational power `(a/b)^n`,
- * where `n` is an integer.
- */
-const ratPow = (
-  v: Rational | Int,
-  n: Int,
-): Either<AlgebraError, (Rational | Int)> => {
-  return numerOf(v).chain((numeratorV) => {
-    if (numeratorV.$n !== 0) {
-      if (n.$n > 0) {
-        return ratPow(v, int(n.$n - 1)).chain((s) => ratProd(s, v));
-      } else if (n.$n === 0) {
-        return right(int(1));
-      } else if (n.$n === -1) {
-        return numerOf(v).chain((nv) => ratQuot(v, nv));
-      } else if (n.$n < -1) {
-        return numerOf(v).chain((nv) => ratQuot(v, nv)).chain((s) =>
-          ratPow(s, int(-n.$n))
-        );
-      } else {
-        return left(algebraError(
-          `Unknown case: ${n.$n}`,
-          `call:ratPow`,
-        ));
-      }
-    } else {
-      if (n.$n >= 1) {
-        return right(int(0));
-      } else {
-        return left(algebraError(
-          `Integer powers must be greater than or equal to 1`,
-          `call:ratPow`,
-        ));
-      }
-    }
-  });
-};
-
-/**
- * This is an auxiliary function used by simplifyRNE.
- */
-const rneRec = (
-  u: MathExpression,
-): Either<AlgebraError, (Int | Rational)> => {
-  if (kind(u) === "integer") {
-    return right(u as Int);
-  } else if (kind(u) === "rational") {
-    return denomOf(u as Rational).chain((d) => {
-      if (d.$n === 0) {
-        return left(algebraError(
-          `Division by 0 encountered.`,
-          `rneRec`,
-        ));
-      } else {
-        return right(u as Rational);
-      }
-    });
-  } else if (nops(u) === 1) {
-    return rneRec(operand(u, 1)).chain((v) => {
-      if (kind(v) === "+") {
-        return right(v);
-      } else if (kind(v) === "-") {
-        return ratProd(int(-1), v);
-      } else {
-        return left(algebraError(
-          `Received a unary RNE, but the operator is neither '+' nor '-'`,
-          `call:rneREC`,
-        ));
-      }
-    });
-  } else if (nops(u) === 2) {
-    if (
-      (kind(u) === "+") ||
-      (kind(u) === "*") ||
-      (kind(u) === "-") ||
-      (kind(u) === "/")
-    ) {
-      return rneRec(operand(u, 1)).chain((v) =>
-        rneRec(operand(u, 2)).chain((w) => {
-          if (kind(u) === "+") {
-            return ratSum(v, w);
-          } else if (kind(u) === "-") {
-            return ratDiff(v, w);
-          } else if (kind(u) === "*") {
-            return ratProd(v, w);
-          } else {
-            return ratQuot(v, w);
-          }
-        })
-      );
-    } else if (kind(u) === "^") {
-      return rneRec(operand(u, 1)).chain((v) => {
-        const w = operand(u, 2);
-        if (kind(w) === "integer") {
-          return ratPow(v, w as Int);
-        } else {
-          return left(algebraError(
-            `Non-integer exponent passed`,
-            `call:rneREC`,
-          ));
-        }
-      });
-    } else {
-      return left(algebraError(
-        `${u.toString()} is not an RNE.`,
-        `call:rneREC`,
-      ));
-    }
-  } else {
-    return left(algebraError(
-      `${u.toString()} is not an RNE.`,
-      `call:rneREC`,
-    ));
-  }
-};
-
-/**
- * This function returns true if the given mathematical
- * expression is a rational number expression.
- */
-const isRNE = (u: MathExpression): boolean => {
-  const k = kind(u);
-  return (
-    // RNE 1 : u is an integer
-    k === "integer" ||
-    // RNE 2 : u is a rational
-    k === "rational" ||
-    // RNE 3: u is a unary or binary sum with operands that are RNEs
-    (kind(u) === "+") && (
-        ((u as Sum).$args.length === 2) ||
-        ((u as Sum).$args.length === 1)
-      ) &&
-      ((u as Sum).$args.reduce((p, c) => p && isRNE(c), true)) ||
-    // RNE 4: u is a unary or binary difference with operands that are RNEs
-    // - Differences always have a length of 2.
-    (kind(u) === "-") &&
-      ((u as Difference).$args.reduce((p, c) => p && isRNE(c), true)) ||
-    // RNE 5 : u is a binary product with operands that are RNEs
-
-    (kind(u) === "*") && (
-        (u as Product).$args.length === 2
-      ) &&
-      ((u as Product).$args.reduce((p, c) => p && isRNE(c), true)) ||
-    // RNE 6 : u is a quotient with operands that are RNEs
-
-    (kind(u) === "/") &&
-      ((u as Quotient).$args.reduce((p, c) => p && isRNE(c), true)) ||
-    // RNE 7 : u is a power with a base that is an RNE and an exponent that is an integer
-
-    (kind(u) === "^") && isRNE((u as Power).left()) &&
-      (kind((u as Power).right()) === "integer")
-  );
-};
-
-/**
- * This function simplifies a rational number expression.
- */
-const simplifyRNE = (u: MathExpression) => {
-  if (!isRNE(u)) {
-    return left(algebraError(
-      `Non-RNE passed to rne`,
-      `call:rne`,
-    ));
-  } else {
-    return rneRec(u).chain((v) => simplifyRationalNumber(v));
-  }
-};
-
-const order = (a: MathExpression, b: MathExpression) => {
 };
 
 const j = exp(`2 + 1|3`);

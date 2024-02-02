@@ -5435,9 +5435,9 @@ type RuntimeValue =
 
 /**
  * Returns a string representation of a given
- * runtime value.
+ * Woven runtime value.
  */
-function strof(value: RuntimeValue): string {
+export function strof(value: RuntimeValue): string {
   // deno-fmt-ignore
   switch (true) {
     case (value === null): return `nil`;

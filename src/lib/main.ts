@@ -5076,6 +5076,12 @@ class Int extends Atom {
   accept<T>(visitor: ExprVisitor<T>): T {
     return visitor.int(this);
   }
+  /**
+   * Returns this integer as a rational.
+   */
+  toRat() {
+    return rat(this.$n, 1);
+  }
 }
 
 /** Returns a new integer. */
@@ -5098,6 +5104,10 @@ class Rational extends Atom {
   }
   accept<T>(visitor: ExprVisitor<T>): T {
     return visitor.rational(this);
+  }
+  /** Returns this rational as a real (floating point number). */
+  toReal() {
+    return real(this.$n / this.$d);
   }
 }
 
@@ -5166,6 +5176,32 @@ class Real extends Atom {
   }
   accept<T>(visitor: ExprVisitor<T>): T {
     return visitor.real(this);
+  }
+  /**
+   * Returns this real as an approximated rational.
+   */
+  toRat(tolerance: number = 0.00001) {
+    let x = this.$n;
+    if (x === 0) {
+      return rat(0, 1);
+    }
+    if (x < 0) {
+      x = -x;
+    }
+    let num = 1;
+    let den = 1;
+    const iterate = () => {
+      let R = num / den;
+      if ((abs(R - x) / x) < tolerance) {
+        return;
+      }
+      if (R < x) {
+        num++;
+      } else den++;
+      iterate();
+    };
+    iterate();
+    return rat(num, den);
   }
 }
 
@@ -5641,7 +5677,7 @@ function exp(expression: string) {
         `parsing a power`,
       );
     }
-    const rhs = expr();
+    const rhs = expr(precOf(op.$type));
     if (rhs.isLeft()) {
       return rhs;
     }
@@ -6309,6 +6345,9 @@ const ratPow = (
   });
 };
 
+/**
+ * This is an auxiliary function used by simplifyRNE.
+ */
 const rneRec = (
   u: MathExpression,
 ): Either<AlgebraError, (Int | Rational)> => {
@@ -6422,7 +6461,10 @@ const isRNE = (u: MathExpression): boolean => {
   );
 };
 
-const rne = (u: MathExpression) => {
+/**
+ * This function simplifies a rational number expression.
+ */
+const simplifyRNE = (u: MathExpression) => {
   if (!isRNE(u)) {
     return left(algebraError(
       `Non-RNE passed to rne`,
@@ -6433,6 +6475,10 @@ const rne = (u: MathExpression) => {
   }
 };
 
-const j = exp(`2 * (1|2 + 1|3)`);
-const k = j.map((x) => rne(x));
-print(treed(k));
+const order = (a: MathExpression, b: MathExpression) => {
+};
+
+const j = exp(`2 + 1|3`);
+const k = j.map((x) => simplifyRNE(x));
+const l = real(.5).toRat();
+print(treed(l));

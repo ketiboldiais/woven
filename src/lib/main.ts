@@ -368,9 +368,33 @@ class RealVector {
     }
     return new RealVector(out);
   }
-  /** Returns the negation of this vector. */
+  /**
+   * Returns a new RealVector, of the same length,
+   * whose elements are the result of applying `f`
+   * on `(a,b)`, where `a` is an element of this vector,
+   * and `b` is some other number.
+   */
+  binaryOp(f: (a: number, b: number) => number, b: number) {
+    const out = [];
+    for (let i = 0; i < out.length; i++) {
+      out.push(f(this.$elements[i], b));
+    }
+    return new RealVector(out);
+  }
+  /**
+   * Returns a new RealVector corresponding to 
+   * the negation of this vector.
+   */
   neg() {
     return this.unaryOp((n) => -n);
+  }
+  /**
+   * Returns a new RealVector corresponding to the 
+   * product of `k`, a scalar, and
+   * this vector.
+   */
+  smul(k:number) {
+    return this.binaryOp((a,b) => a * b, k);
   }
 }
 

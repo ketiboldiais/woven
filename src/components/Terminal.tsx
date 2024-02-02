@@ -5,6 +5,10 @@ import { compiler, strof } from '../lib/main';
 export default function Terminal() {
   const [code, setCode] = useState('');
   const [output, setOutput] = useState('');
+  const clear = () => {
+    setCode('');
+    setOutput('');
+  }
   const tokenize = () => {
     const outputText = compiler().tokens(code);
     setOutput(outputText);
@@ -24,6 +28,7 @@ export default function Terminal() {
         <button onClick={() => tokenize()}>Tokenize</button>
         <button onClick={() => parse()}>Parse</button>
         <button onClick={() => execute()}>Execute</button>
+        <button onClick={() => clear()}>Clear</button>
       </div>
       <textarea value={code} onChange={(e) => setCode(e.target.value)} />
       <pre>{output}</pre>

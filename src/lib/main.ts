@@ -344,7 +344,7 @@ class MSet<T> {
 const set = <T>(elements: T[]) => (new MSet(elements));
 
 /** An object corresponding to a vector. */
-class Vector {
+class RealVector {
   $elements: number[];
   constructor(elements: number[]) {
     this.$elements = elements;
@@ -358,26 +358,26 @@ class Vector {
 }
 
 /** Returns a new vector. */
-const vector = (elements: number[]) => (
-  new Vector(elements)
+const rvector = (elements: number[]) => (
+  new RealVector(elements)
 );
 
 /**
  * Returns true, and asserts,
  * if the given `x` is a vector.
  */
-const isVector = (x: any): x is Vector => (
-  x instanceof Vector
+const isVector = (x: any): x is RealVector => (
+  x instanceof RealVector
 );
 
 /**
  * An object corresponding to a matrix.
  */
 class Matrix {
-  $vectors: Vector[];
+  $vectors: RealVector[];
   $rows: number;
   $columns: number;
-  constructor(vectors: Vector[]) {
+  constructor(vectors: RealVector[]) {
     this.$vectors = vectors;
     this.$rows = vectors.length;
     this.$columns = vectors[0].length;
@@ -391,7 +391,7 @@ class Matrix {
 }
 
 /** Returns a new matrix. */
-const matrix = (vectors: Vector[]) => (
+const matrix = (vectors: RealVector[]) => (
   new Matrix(vectors)
 );
 
@@ -3864,7 +3864,7 @@ type RuntimeValue =
   | Primitive
   | Callable
   | ReturnValue
-  | Vector
+  | RealVector
   | Matrix
   | KlassInstance
   | Fn
@@ -4639,10 +4639,10 @@ class Interpreter implements Visitor<RuntimeValue> {
       }
       elements.push(elem);
     }
-    return vector(elements);
+    return rvector(elements);
   }
   matrixExpr(expr: MatrixExpr): RuntimeValue {
-    const vectors: Vector[] = [];
+    const vectors: RealVector[] = [];
     for (let i = 0; i < expr.$vectors.length; i++) {
       const v = this.evaluate(expr.$vectors[i]);
       if (!isVector(v)) {

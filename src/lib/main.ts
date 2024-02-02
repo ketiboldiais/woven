@@ -343,17 +343,34 @@ class MSet<T> {
 /** Returns a new Set. */
 const set = <T>(elements: T[]) => (new MSet(elements));
 
-/** An object corresponding to a vector. */
+/** An object corresponding to a vector of floating point numbers. */
 class RealVector {
   $elements: number[];
   constructor(elements: number[]) {
     this.$elements = elements;
   }
+  /** Returns the number of elements of this RealVector. */
   get length() {
     return this.$elements.length;
   }
   at(index: number) {
     return this.$elements[index - 1];
+  }
+  /**
+   * Returns a new RealVector, of the same length,
+   * whose elements are the result of applying `f`
+   * to this RealVector’s elements.
+   */
+  unaryOp(f: (n: number) => number) {
+    const out = [];
+    for (let i = 0; i < out.length; i++) {
+      out.push(f(this.$elements[i]));
+    }
+    return new RealVector(out);
+  }
+  /** Returns the negation of this vector. */
+  neg() {
+    return this.unaryOp((n) => -n);
   }
 }
 
@@ -373,7 +390,7 @@ const isVector = (x: any): x is RealVector => (
 /**
  * An object corresponding to a matrix.
  */
-class Matrix {
+class RealMatrix {
   $vectors: RealVector[];
   $rows: number;
   $columns: number;
@@ -391,16 +408,16 @@ class Matrix {
 }
 
 /** Returns a new matrix. */
-const matrix = (vectors: RealVector[]) => (
-  new Matrix(vectors)
+const rmatrix = (vectors: RealVector[]) => (
+  new RealMatrix(vectors)
 );
 
 /**
  * Returns true, and asserts,
  * if x is a matrix.
  */
-const isMatrix = (x: any): x is Matrix => (
-  x instanceof Matrix
+const isMatrix = (x: any): x is RealMatrix => (
+  x instanceof RealMatrix
 );
 
 // § Start: Compiler ===================================================
@@ -3865,7 +3882,7 @@ type RuntimeValue =
   | Callable
   | ReturnValue
   | RealVector
-  | Matrix
+  | RealMatrix
   | KlassInstance
   | Fn
   | MSet<RuntimeValue>
@@ -4655,7 +4672,7 @@ class Interpreter implements Visitor<RuntimeValue> {
       }
       vectors.push(v);
     }
-    return matrix(vectors);
+    return rmatrix(vectors);
   }
   assignExpr(expr: AssignExpr): RuntimeValue {
     const value = this.evaluate(expr.$value);

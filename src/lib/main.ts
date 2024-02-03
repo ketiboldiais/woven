@@ -44,6 +44,49 @@ const MAX_FLOAT = Number.MAX_VALUE;
 /** Returns a% of b. */
 const percent = (a: number, b: number) => ((a / 100) * b);
 
+/**
+ * Returns the number between `x` and `y` at the specified increment `a`.
+ */
+const lerp = (interval: [number, number], value: number) => (
+  interval[0] * (1 - value) + interval[1] * value
+);
+
+/**
+ * Clamps the given `value` between the `leastPossibleValue` and
+ * the `greatestPossibleValue`.
+ */
+const clamp = (
+  leastPossibleValue: number,
+  value: number,
+  greatestPossibleValue: number,
+) => (
+  min(greatestPossibleValue, max(leastPossibleValue, value))
+);
+
+/**
+ * This function, the "inverse lerp", returns the distance
+ * between `value` and `lower`, in terms of the
+ * percentage (a decimal between 0 and 1, inclusive) of the
+ * distance between `lower` and `upper`.
+ */
+const ilerp = (interval: [number, number], value: number) => (
+  clamp(0, (value - interval[0]) / (interval[1] - interval[0]), 1)
+);
+
+/**
+ * Given the intervals `interval1` and `interval2`, returns a function
+ * that, given a `value` within `interval1`, returns the
+ * corresponding number in `interval2` at the same percentage of
+ * the distance between the `interval2` endpoints.
+ */
+// deno-fmt-ignore
+const range = (
+  interval1: [number, number], 
+  interval2: [number, number]
+) => (
+  value: number,
+) => lerp(interval2, ilerp(interval1, value));
+
 /** Returns true if the given `n` is a JavaScript number. */
 const isJSNum = (x: any): x is number => (
   typeof x === "number" && !Number.isNaN(x)
@@ -280,6 +323,10 @@ const left = <T>(x: T): Left<T> => new Left(x);
 /** Returns a new right. */
 const right = <T>(x: T): Right<T> => new Right(x);
 
+// § Mixin Function ============================================================
+type Constructor<T = {}> = new (...args: any[]) => T;
+type MixOf<A, B> = A & Constructor<B>;
+
 // § Mathematical Objects ======================================================
 // What follows are JavaScript objects that are created during
 // code interpretation. These objects are also used in Woven’s algebraic
@@ -358,6 +405,33 @@ class RealVector {
     this.$elements = elements;
   }
   /**
+   * Assumes this vector has a geometric
+   * interpretation, and returns the z-coordinate (the
+   * third element of this vector). If no such element
+   * exists, returns NaN.
+   */
+  get z() {
+    return this.at(3);
+  }
+  /**
+   * Assumes this vector has a geometric
+   * interpretation, and returns the y-coordinate (the
+   * second element of this vector). If no such element
+   * exists, returns NaN.
+   */
+  get y() {
+    return this.at(2);
+  }
+  /**
+   * Assumes this vector has a geometric
+   * interpretation, and returns the x-coordinate (the
+   * first element of this vector). If no such element
+   * exists, returns NaN.
+   */
+  get x() {
+    return this.at(1);
+  }
+  /**
    * Returns this RealVector as a 1 x n matrix,
    * where `n` is the length of this vector. I.e.,
    * returns this RealVector as a row vector,
@@ -395,8 +469,9 @@ class RealVector {
    * Returns the element at the given index.
    * Note that indices start at 1.
    */
-  at(index: number) {
-    return this.$elements[index - 1];
+  at(index: number): number {
+    const out = this.$elements[index - 1];
+    return out === undefined ? NaN : out;
   }
   /**
    * Returns a new RealVector, of the same length,
@@ -3754,11 +3829,159 @@ const order = (a: MathExpression, b: MathExpression) => {
 
 // § Graphics Module ===========================================================
 // This section implements Woven’s graphics modules.
-/**
- * Returns the number between `x` and `y` at the specified increment `a`.
- */
-const lerp = (x: number, y: number, a: number) => x + (a * abs(y - x));
 
+type PAR =
+  | "xMinYMin"
+  | "xMidYMin"
+  | "xMaxYMin"
+  | "xMinYMid"
+  | "xMidYMid"
+  | "xMaxYMid"
+  | "xMinYMax"
+  | "xMidYMax"
+  | "xMaxYMax";
+
+/**
+ * An object corresponding to an SVG element.
+ */
+class SVG {
+  /** The width of this SVG, in pixels. */
+  $width: number;
+  /** The height of this SVG, in pixels. */
+  $height: number;
+  /** This SVG’s viewbox. */
+  $viewBox: string;
+  $preserveAspectRatio: `${PAR} ${"meet" | "slice"}`;
+  constructor(width: number, height: number) {
+    this.$width = width;
+    this.$height = height;
+    this.$viewBox = `0 0 ${width} ${height}`;
+    this.$preserveAspectRatio = "xMidYMid meet";
+  }
+  /**
+   * Sets the `$preserveAspectRatio` property
+   * for this SVG. Valid values are a string concatenation of
+   * one of the following:
+   *
+   * 1. `xMin` - Align minimum x value of viewBox with left edge of viewport.
+   * 2. `xMid` - Align midpoint x value of viewBox with horizontal
+   *    center of viewport.
+   * 3. `xMax` - Align maximum x value of viewBox with right edge of viewport.
+   *
+   * With one of the following:
+   *
+   * 1. `YMin` - Align minimum y value of viewBox with top edge of viewport.
+   * 2. `YMid` - Align midpoint y value of viewBox with
+   *    vertical center of viewport.
+   * 3. `YMax` - Align maximum y value of viewBox with bottom edge of viewport.
+   *
+   * E.g., `xMidYMid` (the default value). A second argument, `meetOrSlice`
+   * may be passed (defaults to `meet`).
+   */
+  preserveAspectRatio(value: PAR, meetOrSlice: "meet" | "slice" = "meet") {
+    this.$preserveAspectRatio = `${value} ${meetOrSlice}`;
+    return this;
+  }
+}
+
+/**
+ * Returns a new SVG object.
+ */
+export const svg = (width: number, height: number) => (
+  new SVG(width, height)
+);
+
+// SVG Commands ----------------------------------------------------------------
+abstract class PathCommand {
+  abstract toString(): string;
+}
+/**
+ * An object corresponding to a moveto command.
+ */
+class MCommand extends PathCommand {
+  $end: RealVector;
+  constructor(end: RealVector) {
+    super();
+    this.$end = end;
+  }
+  toString(): string {
+    return `M${this.$end.x} ${this.$end.y}`;
+  }
+}
+
+/**
+ * An object corresponding to a lineto command.
+ */
+class LCommand extends PathCommand {
+  $end: RealVector;
+  constructor(end: RealVector) {
+    super();
+    this.$end = end;
+  }
+  toString(): string {
+    return `L${this.$end.x} ${this.$end.y}`;
+  }
+}
+
+interface Stroked {
+  /** The stroke’s thickness. */
+  $strokeWidth: number;
+
+  /** Sets the stroke’s thickness. */
+  strokeWidth(width: number): this;
+
+  /** The stroke’s color. Defaults to `"initial"` */
+  $stroke: string;
+
+  /** Sets the stroke’s color. */
+  stroke(color: string): this;
+
+  /** The stroke’s opacity. */
+  $strokeOpacity: number;
+
+  /**
+   * Sets the stroke’s opacity to the given value.
+   * The value must be a number between 0 and 1.
+   */
+  strokeOpacity(value: number): this;
+
+  /**
+   * The stroke’s stroke dash array property.
+   */
+  $strokeDashArray: string;
+
+  /**
+   * Sets the stroke’s stroke dash array property.
+   */
+  strokeDashArray(...values: number[]): this;
+}
+
+function stroked<BaseClass extends Constructor>(
+  BaseClass: BaseClass,
+): MixOf<BaseClass, Stroked> {
+  return class extends BaseClass implements Stroked {
+    $strokeWidth: number = 1;
+    strokeWidth(width: number) {
+      this.$strokeWidth = width;
+      return this;
+    }
+    $stroke: string = "black";
+    stroke(color: string) {
+      this.$stroke = color;
+      return this;
+    }
+    $strokeOpacity: number = 1;
+    strokeOpacity(value: number) {
+      this.$strokeOpacity = clamp(0, value, 1);
+      return this;
+    }
+    $strokeDashArray: string = "1";
+    strokeDashArray(...values: number[]) {
+      this.$strokeDashArray = values.join(",");
+      return this;
+    }
+  };
+}
 
 // § Compiler Module ===========================================================
 // This section marks the beginning of Woven’s interpreter.
@@ -6678,7 +6901,8 @@ class Interpreter implements Visitor<RuntimeValue> {
     if (is_array) {
       return list[index];
     } else if (is_vector) {
-      return list.at(index);
+      const out = list.at(index);
+      return out;
     } else if (is_matrix) {
       return list.row(index);
     } else {
@@ -7105,3 +7329,6 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
     },
   };
 };
+
+const k = rvector([0, 1, 2]);
+print(k.z);

@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import css from './Terminal.module.scss';
-import { compiler, strof } from '../lib/main';
+import { compiler, strof, svg } from '../lib/main';
+
+const Sketch = () => {
+  const s = svg(200,200);
+  return (
+    <svg viewBox={s.$viewBox} preserveAspectRatio={s.$preserveAspectRatio}>
+    </svg>
+  );
+};
 
 export default function Terminal() {
   const [code, setCode] = useState('');
@@ -8,7 +16,7 @@ export default function Terminal() {
   const clear = () => {
     setCode('');
     setOutput('');
-  }
+  };
   const tokenize = () => {
     const outputText = compiler().tokens(code);
     setOutput(outputText);
@@ -16,12 +24,11 @@ export default function Terminal() {
   const execute = () => {
     const outputText = compiler().execute(code);
     setOutput(strof(outputText));
-
-  }
+  };
   const parse = () => {
     const outpuText = compiler().ast(code);
     setOutput(outpuText);
-  }
+  };
   return (
     <div className={css.terminal}>
       <div>
@@ -32,6 +39,7 @@ export default function Terminal() {
       </div>
       <textarea value={code} onChange={(e) => setCode(e.target.value)} />
       <pre>{output}</pre>
+      <Sketch/>
     </div>
   );
 }

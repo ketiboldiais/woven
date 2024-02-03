@@ -40,6 +40,11 @@ const {
 // § Native Mathematical Constants =============================================
 const MAX_INT = Number.MAX_SAFE_INTEGER;
 const MAX_FLOAT = Number.MAX_VALUE;
+const sec = (x: number) => (1 / cos(x));
+const csc = (x: number) => (1 / sin(x));
+
+/** Returns a tuple. */
+export const tuple = <T extends any[]>(...data: T) => data;
 
 /** Returns a% of b. */
 const percent = (a: number, b: number) => ((a / 100) * b);
@@ -362,40 +367,6 @@ const scinum = (base: number, exponent: number) => (
  */
 const isScinum = (value: any): value is Scinum => (
   value instanceof Scinum
-);
-
-/**
- * An object corresponding to a set at runtime.
- */
-class RSet {
-  $elements: Set<RuntimeValue>;
-  constructor(elements: RuntimeValue[]) {
-    this.$elements = new Set(elements);
-  }
-  /** Returns the number of elements of this set. */
-  card() {
-    return this.$elements.size;
-  }
-  toString() {
-    let out = "SET {";
-    let i = 0;
-    const size = this.card();
-    this.$elements.forEach((e) => {
-      out += strof(e);
-      if (i !== size - 1) {
-        out += ",";
-      }
-      i++;
-    });
-    out += "}";
-    return out;
-  }
-}
-
-/** Returns a new Set. */
-const set = (elements: RuntimeValue[]) => (new RSet(elements));
-const isRSet = (x: any): x is RSet => (
-  x instanceof RSet
 );
 
 /** An object corresponding to a vector of floating point numbers. */
@@ -4736,6 +4707,7 @@ class Plot2D {
     const out: PathCommand[] = [];
     const f = engine.execute(`fn ${this.$f};`);
     if (!isCallable(f)) {
+      print(strof(f));
       return path(0, 0, 0);
     }
     const dataset: [number, number][] = [];
@@ -4798,7 +4770,6 @@ interface Visitor<T> {
   indexingExpr(expr: IndexingExpr): T;
   tupleExpr(expr: TupleExpr): T;
   vectorExpr(expr: VectorExpr): T;
-  setExpr(expr: SetExpr): T;
   matrixExpr(expr: MatrixExpr): T;
   assignExpr(expr: AssignExpr): T;
   binaryExpr(expr: BinaryExpr): T;
@@ -5215,25 +5186,6 @@ const matrixExpr = (
   new MatrixExpr(vectors, rows, columns, leftBracket)
 );
 
-class SetExpr extends Expr {
-  $elements: Expr[];
-  $leftBrace: Token;
-  constructor(elements: Expr[], leftBrace: Token) {
-    super();
-    this.$elements = elements;
-    this.$leftBrace = leftBrace;
-  }
-  accept<T>(Visitor: Visitor<T>): T {
-    return Visitor.setExpr(this);
-  }
-  kind(): NodeKind {
-    return NodeKind.setExpr;
-  }
-}
-const setExpr = (elements: Expr[], leftBrace: Token) => (
-  new SetExpr(elements, leftBrace)
-);
-
 /** A class corresponding to a binary expression. */
 class BinaryExpr extends Expr {
   /** The left operand of this binary expression. */
@@ -5411,6 +5363,11 @@ class GroupExpr extends Expr {
  */
 const groupExpr = (innerExpression: Expr) => (
   new GroupExpr(innerExpression)
+);
+
+/** Returns true if the given node is a GroupExpr. */
+const isGroupExpr = (node: ASTNode): node is GroupExpr => (
+  node.kind() === NodeKind.groupExpr
 );
 
 /**
@@ -5956,16 +5913,30 @@ function syntaxAnalysis(code: string): Either<Err, Statement[]> {
    * A parse rule that parses a numeric
    * literal (a float or an integer).
    */
-  const number: ParseRule<Expr> = (token) => {
-    if (token.isNumericToken()) {
-      if (token.is(TokenType.FLOAT)) {
-        return state.expr(float(token.$literal));
-      } else {
-        return state.expr(intExpr(token.$literal));
+  const number: ParseRule<Expr> = (tkn) => {
+    if (tkn.isNumericToken()) {
+      const out = (
+          tkn.is(TokenType.INT)
+        )
+        ? intExpr(tkn.$literal)
+        : float(tkn.$literal);
+      const peek = state.$peek;
+      if (peek.is(TokenType.LEFT_PAREN) || peek.is(TokenType.IDENTIFIER)) {
+        const r = expr(BP.IMUL);
+        if (r.isLeft()) {
+          return r;
+        }
+        const right = r.unwrap();
+        const star = token(TokenType.STAR, "*", null, tkn.$line, tkn.$column);
+        const left = out;
+        return state.expr(
+          groupExpr(binex(left, star, right)),
+        );
       }
+      return state.expr(out);
     } else {
       return state.error(
-        `Expected an integer, but got ${token.$lexeme}`,
+        `Expected an integer, but got ${tkn.$lexeme}`,
         `parsing an integer`,
       );
     }
@@ -6128,31 +6099,6 @@ function syntaxAnalysis(code: string): Either<Err, Statement[]> {
     return expr(p).chain((arg) => {
       return state.expr(unaryExpr(op, arg));
     });
-  };
-
-  const setExpression: ParseRule<Expr> = (leftBrace) => {
-    const elements: Expr[] = [];
-    const phase = `parsing a vector expression`;
-    if (!state.check(TokenType.RIGHT_BRACKET)) {
-      do {
-        const elem = expr();
-        if (elem.isLeft()) {
-          return elem;
-        }
-        const element = elem.unwrap();
-        elements.push(element);
-      } while (
-        state.nextIs(TokenType.COMMA) &&
-        !state.check(TokenType.RIGHT_BRACE)
-      );
-    }
-    if (!state.nextIs(TokenType.RIGHT_BRACE)) {
-      return state.error(
-        `Expected a “}” to close the set`,
-        phase,
-      );
-    }
-    return state.expr(setExpr(elements, leftBrace));
   };
 
   const getExpression: ParseRule<Expr> = (op, lhs) => {
@@ -6420,7 +6366,7 @@ function syntaxAnalysis(code: string): Either<Err, Statement[]> {
     } else {
       return state.error(
         `Unexpected lexeme: ${t.$lexeme}`,
-        `expression`,
+        `parsing an expression`,
       );
     }
   };
@@ -6492,7 +6438,7 @@ function syntaxAnalysis(code: string): Either<Err, Statement[]> {
     [TokenType.DOT]: [___, getExpression, BP.CALL],
 
     // Not handled by the Pratt parsing function (`expr`).
-    [TokenType.LEFT_BRACE]: [setExpression, ___, BP.LITERAL],
+    [TokenType.LEFT_BRACE]: [___, ___, ___o],
     [TokenType.RIGHT_BRACE]: [___, ___, ___o], // Handled by block statement
     [TokenType.RIGHT_BRACKET]: [___, ___, ___o],
     [TokenType.COMMA]: [___, ___, ___o], // Handled by various parsers
@@ -6957,7 +6903,6 @@ type RuntimeValue =
   | RealMatrix
   | KlassInstance
   | Fn
-  | RSet
   | RuntimeValue[];
 
 /**
@@ -6971,7 +6916,6 @@ export function strof(value: RuntimeValue): string {
     case (typeof value === 'string'): return `"${value}"`;
     case (typeof value === 'boolean'):
     case (typeof value === 'number'): return `${value}`;
-    case (isRSet(value)):
     case (isRealMatrix(value)):
     case (isRealVector(value)):
     case (value instanceof Callable):
@@ -7170,10 +7114,6 @@ class Resolver<T extends Resolvable = Resolvable> implements Visitor<void> {
     }
     this.endScope();
     this.$currentClass = enclosingClass;
-    return;
-  }
-  setExpr(expr: SetExpr): void {
-    this.resolveEach(expr.$elements);
     return;
   }
   getExpr(expr: PropGetExpr): void {
@@ -7717,14 +7657,6 @@ class Interpreter implements Visitor<RuntimeValue> {
       );
     }
   }
-  setExpr(expr: SetExpr): RuntimeValue {
-    const elements: RuntimeValue[] = [];
-    for (let i = 0; i < expr.$elements.length; i++) {
-      const elem = this.evaluate(expr.$elements[i]);
-      elements.push(elem);
-    }
-    return set(elements);
-  }
   getExpr(expr: PropGetExpr): RuntimeValue {
     const object = this.evaluate(expr.$object);
     if (object instanceof KlassInstance) {
@@ -8029,17 +7961,18 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
     },
     nativeFunctions: {
       abs: nativeFn(abs),
-      acos: nativeFn(acos),
-      acosh: nativeFn(acosh),
-      asin: nativeFn(asin),
-      asinh: nativeFn(asinh),
-      atan: nativeFn(atan),
-      atan2: nativeFn(atan2),
-      atanh: nativeFn(atanh),
+      arccos: nativeFn(acos),
+      arccosh: nativeFn(acosh),
+      arcsin: nativeFn(asin),
+      arcsinh: nativeFn(asinh),
+      arctan: nativeFn(atan),
+      arctan2: nativeFn(atan2),
+      arctanh: nativeFn(atanh),
       cbrt: nativeFn(cbrt),
       clz32: nativeFn(clz32),
       cos: nativeFn(cos),
       cosh: nativeFn(cosh),
+      csc: nativeFn(csc),
       exp: nativeFn(EXP),
       expm1: nativeFn(expm1),
       floor: nativeFn(floor),
@@ -8054,6 +7987,7 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
       min: nativeFn(min),
       rand: nativeFn(random),
       round: nativeFn(round),
+      sec: nativeFn(sec),
       sgn: nativeFn(sgn),
       sin: nativeFn(sin),
       sinh: nativeFn(sinh),

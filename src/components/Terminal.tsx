@@ -14,6 +14,7 @@ import {
   grid2D,
   coord,
   plot2D,
+  tuple,
 } from '../lib/main';
 
 const Path = ({ of }: { of: RenderablePath }) => (
@@ -48,24 +49,21 @@ const Group = ({ of }: { of: RenderableGroup }) => (
 );
 
 const Sketch = () => {
-  const cs = coord([-1, 6], [-1, 6]);
-
-  const p = path(0, 0).Q([4, 4], [0, 2]).stroke('firebrick').fill('none');
-
+  const xdomain = tuple(-10, 10);
+  const ydomain = tuple(-10, 10);
+  const gridIncrement = 1;
+  const cs = coord(xdomain, ydomain);
   const xAxis = line2D([-10, 0], [10, 0]);
-
   const yAxis = line2D([0, -10], [0, 10]);
-
   const axes = group([xAxis, yAxis]).stroke('grey').strokeWidth(0.5);
-
-  const curve = plot2D('f(x) = x^2', [-1, 6], [-1, 6]);
-
+  const curve = plot2D(`f(x) = cos(x) * (2x^2 - 1)`, xdomain, ydomain);
   const elements = group([
     curve.path().stroke('red').fill('none'),
     axes,
-    grid2D([-1, 6], [-1, 6], 0.5).stroke('lightgrey').strokeWidth(0.25),
+    grid2D(xdomain, ydomain, gridIncrement)
+      .stroke('lightgrey')
+      .strokeWidth(0.25),
   ]).coordinateSystem(cs);
-
   const s = svg(200, 200).children([elements]).done();
 
   return (

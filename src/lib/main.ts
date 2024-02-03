@@ -3894,34 +3894,211 @@ export const svg = (width: number, height: number) => (
 // SVG Commands ----------------------------------------------------------------
 abstract class PathCommand {
   abstract toString(): string;
+  $end: RealVector;
+  constructor(end: RealVector) {
+    this.$end = end;
+  }
 }
 /**
  * An object corresponding to a moveto command.
  */
 class MCommand extends PathCommand {
-  $end: RealVector;
   constructor(end: RealVector) {
-    super();
-    this.$end = end;
+    super(end);
   }
   toString(): string {
     return `M${this.$end.x} ${this.$end.y}`;
   }
 }
+const moveTo = (x: number, y: number, z: number = 0) => (
+  new MCommand(rvector([x, y, z]))
+);
 
 /**
  * An object corresponding to a lineto command.
  */
 class LCommand extends PathCommand {
-  $end: RealVector;
   constructor(end: RealVector) {
-    super();
-    this.$end = end;
+    super(end);
   }
   toString(): string {
     return `L${this.$end.x} ${this.$end.y}`;
   }
 }
+
+const lineTo = (x: number, y: number, z: number = 0) => (
+  new LCommand(rvector([x, y, z]))
+);
+
+class HCommand extends PathCommand {
+  constructor(end: RealVector) {
+    super(end);
+  }
+  toString(): string {
+    return `H${this.$end.x} ${this.$end.y}`;
+  }
+}
+
+const hLineTo = (x: number, y: number, z: number = 0) => (
+  new HCommand(rvector([x, y, z]))
+);
+
+class VCommand extends PathCommand {
+  constructor(end: RealVector) {
+    super(end);
+  }
+  toString(): string {
+    return `V${this.$end.x} ${this.$end.y}`;
+  }
+}
+
+const vLineTo = (x: number, y: number, z: number = 0) => (
+  new VCommand(rvector([x, y, z]))
+);
+
+class ACommand extends PathCommand {
+  constructor(
+    rx: number,
+    ry: number,
+    xAxisRotation: number,
+    largeArc: 0 | 1,
+    sweep: 0 | 1,
+    end: RealVector,
+  ) {
+    super(end);
+    this.$rx = rx;
+    this.$ry = ry;
+    this.$xAxisRotation = xAxisRotation;
+    this.$largeArc = largeArc;
+    this.$sweep = sweep;
+    this.$end = end;
+  }
+
+  /** The x-axis rotation. */
+  $xAxisRotation: number = 0;
+
+  /** Sets the x-axis rotation. */
+  xAxisRotation(rotation: number) {
+    this.$xAxisRotation = rotation;
+    return this;
+  }
+
+  /** The x-radius. */
+  $rx: number = 1;
+
+  /** Sets the x-radius. */
+  rx(r: number) {
+    this.$rx = r;
+    return this;
+  }
+
+  /** The y-radius. */
+  $ry: number = 1;
+
+  /** Sets the y-radius. */
+  ry(r: number) {
+    this.$ry = r;
+    return this;
+  }
+
+  /** The large-arc-flag. */
+  $largeArc: 0 | 1 = 0;
+
+  /** Sets the large-arc-flag. */
+  largeArc(value: 0 | 1) {
+    this.$largeArc = value;
+    return this;
+  }
+
+  /** The sweep flag. */
+  $sweep: 0 | 1 = 0;
+
+  /** Sets the sweep flag. */
+  sweep(value: 0 | 1 = 0) {
+    this.$sweep = value;
+    return this;
+  }
+
+  toString(): string {
+    return `A${this.$rx},${this.$ry} ${this.$xAxisRotation}  ${this.$largeArc} ${this.$sweep} ${this.$end.x},${this.$end.y}`;
+  }
+}
+
+const arcTo = (
+  rx: number,
+  ry: number,
+  xAxisRotation: number,
+  largeArc: 0 | 1,
+  sweep: 0 | 1,
+  end: [number, number] | [number, number, number],
+) => (
+  new ACommand(
+    rx,
+    ry,
+    xAxisRotation,
+    largeArc,
+    sweep,
+    rvector(
+      end.length === 2 ? [end[0], end[1], 0] : end,
+    ),
+  )
+);
+
+class QCommand extends PathCommand {
+  $control: RealVector;
+  constructor(control: RealVector, end: RealVector) {
+    super(end);
+    this.$control = control;
+  }
+  toString(): string {
+    return `Q${this.$control.x},${this.$control.y} ${this.$end.x},${this.$end.y}`;
+  }
+}
+
+const qbcTo = (
+  control: [number, number] | [number, number, number],
+  end: [number, number] | [number, number, number],
+) => (
+  new QCommand(
+    rvector(
+      control.length === 2 ? [control[0], control[1], 0] : control,
+    ),
+    rvector(
+      end.length === 2 ? [end[0], end[1], 0] : end,
+    ),
+  )
+);
+
+class CCommand extends PathCommand {
+  $control1: RealVector;
+  $control2: RealVector;
+  constructor(control1: RealVector, control2: RealVector, end: RealVector) {
+    super(end);
+    this.$control1 = control1;
+    this.$control2 = control2;
+  }
+  toString(): string {
+    return `C${this.$control1.x},${this.$control1.y} ${this.$control2.x} ${this.$control2.y} ${this.$end.x},${this.$end.y}`;
+  }
+}
+
+const cbcTo = (
+  control1: [number, number] | [number, number, number],
+  control2: [number, number] | [number, number, number],
+  end: [number, number] | [number, number, number],
+) => (
+  new CCommand(
+    rvector(
+      control1.length === 2 ? [control1[0], control1[1], 0] : control1,
+    ),
+    rvector(
+      control2.length === 2 ? [control2[0], control2[1], 0] : control2,
+    ),
+    rvector(
+      end.length === 2 ? [end[0], end[1], 0] : end,
+    ),
+  )
+);
 
 interface Stroked {
   /** The stroke’s thickness. */
@@ -3981,6 +4158,14 @@ function stroked<BaseClass extends Constructor>(
       return this;
     }
   };
+}
+type Position = [number, number] | [number, number, number];
+
+class Path {
+  $commands: PathCommand[] = [];
+  constructor(startX: number, startY: number, startZ: number) {
+    this.$commands = [];
+  }
 }
 
 // § Compiler Module ===========================================================

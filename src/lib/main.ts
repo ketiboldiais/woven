@@ -3866,6 +3866,12 @@ class SVG {
     return this;
   }
 
+  /** Appends the given child to this SVG. */
+  child(renderable: Renderable) {
+    this.$children.push(renderable);
+    return this;
+  }
+
   /**
    * Returns an array whose elements are the result
    * of applying the callback `f` to each child
@@ -4249,7 +4255,7 @@ abstract class Renderable {
   /**
    * The type of this renderable. This property
    * may be set to one of the following:
-   * 
+   *
    * 1. `RENDERABLE_TYPE.RENDERABLE_PATH` - A Path object with
    *     the mixins of strokable and fillable.
    * 2. `RENDERABLE_TYPE.RENDERABLE_GROUP` - A Group object with
@@ -5666,7 +5672,13 @@ const enstate = (code: string) => (
   new ParserState(code)
 );
 
-function syntaxAnalysis(code: string) {
+// § Woven Statement Parser
+/**
+ * Given the input code, this function returns
+ * a either an error or an of array of
+ * parsed statements.
+ */
+function syntaxAnalysis(code: string): Either<Err, Statement[]> {
   const state = enstate(code);
 
   /**
@@ -6648,26 +6660,22 @@ function syntaxAnalysis(code: string) {
     }
   };
 
-  return {
-    /**
-     * Returns the statements parsed
-     * from the given code.
-     */
-    statements() {
-      if (state.$error !== null) {
-        return left(state.$error);
+  const run = () => {
+    if (state.$error !== null) {
+      return left(state.$error);
+    }
+    const statements: Statement[] = [];
+    while (!state.atEnd()) {
+      const result = statement();
+      if (result.isLeft()) {
+        return result;
       }
-      const statements: Statement[] = [];
-      while (!state.atEnd()) {
-        const result = statement();
-        if (result.isLeft()) {
-          return result;
-        }
-        statements.push(result.unwrap());
-      }
-      return right(statements);
-    },
+      statements.push(result.unwrap());
+    }
+    return right(statements);
   };
+
+  return run();
 }
 
 type RuntimeValue =
@@ -7817,7 +7825,7 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
      * Returns a pretty-print tree of the AST.
      */
     ast(code: string) {
-      const result = syntaxAnalysis(code).statements();
+      const result = syntaxAnalysis(code);
       if (result.isLeft()) {
         return result.unwrap().print();
       } else {
@@ -7829,7 +7837,7 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
      * Executes the given code.
      */
     execute(code: string) {
-      const ast = syntaxAnalysis(code).statements();
+      const ast = syntaxAnalysis(code);
       if (ast.isLeft()) {
         const erm = ast.unwrap().print();
         print(erm);

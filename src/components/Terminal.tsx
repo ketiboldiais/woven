@@ -1,13 +1,27 @@
 import { useState } from 'react';
 import css from './Terminal.module.scss';
-import { compiler, strof, svg, path } from '../lib/main';
+import { compiler, strof, svg, path, isPath } from '../lib/main';
 
 const Sketch = () => {
-  const s = svg(200, 200);
   const p = path(10, 10).Q([20, 20], [10, 40]).stroke('firebrick');
+  const s = svg(200, 200).child(p);
   return (
     <svg viewBox={s.$viewBox} preserveAspectRatio={s.$preserveAspectRatio}>
-      <path d={p.toString()} stroke={p.$stroke} strokeWidth={p.$strokeWidth} fill={'none'} />
+      {s.map((c, i) => {
+        if (isPath(c)) {
+          return (
+            <path
+              key={`path-${i}`}
+              d={c.toString()}
+              stroke={c.$stroke}
+              strokeWidth={c.$strokeWidth}
+              fill={'none'}
+            />
+          );
+        } else {
+          return <></>;
+        }
+      })}
     </svg>
   );
 };

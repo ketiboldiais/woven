@@ -3841,6 +3841,30 @@ type PAR =
   | "xMidYMax"
   | "xMaxYMax";
 
+class CoordinateSystem {
+  $xDomain: [number, number];
+  $yDomain: [number, number];
+  $zDomain: [number, number];
+  constructor(
+    xDomain: [number, number],
+    yDomain: [number, number],
+    zDomain: [number, number],
+  ) {
+    this.$xDomain = xDomain;
+    this.$yDomain = yDomain;
+    this.$zDomain = zDomain;
+  }
+}
+
+/**
+ * Returns a new coordinate system object.
+ */
+export const coord = (
+  xDomain: [number, number],
+  yDomain: [number, number],
+  zDomain: [number, number] = [-10, 10],
+) => (new CoordinateSystem(xDomain, yDomain, zDomain));
+
 /**
  * An object corresponding to an SVG element.
  */
@@ -3879,6 +3903,18 @@ class SVG {
    */
   map<K>(f: (child: Renderable, index: number) => K) {
     return this.$children.map((child, index) => f(child, index));
+  }
+
+  /**
+   * If called, ensures that all coordinates of
+   * this SVG’s children are scaled according
+   * to this SVG’s width and height.
+   */
+  done() {
+    this.$children.forEach((c) => {
+      c.fit([0, this.$width], [this.$height, 0], [0, 1]);
+    });
+    return this;
   }
 
   constructor(width: number, height: number) {
@@ -3920,11 +3956,21 @@ export const svg = (width: number, height: number) => (
   new SVG(width, height)
 );
 
+enum PathCommandType {
+  M,
+  Z,
+  L,
+  A,
+  Q,
+  C,
+}
+
 // SVG Commands ----------------------------------------------------------------
 /** An object representation of an SVG path command. */
 abstract class PathCommand {
   /** Returns the string representation of this path command. */
   abstract toString(): string;
+  $type: PathCommandType;
 
   /** The endpoint of this path command. */
   $end: RealVector;
@@ -3932,8 +3978,9 @@ abstract class PathCommand {
   /** A property indicating whether this path command is a relative command. */
   $relative: boolean = false;
 
-  constructor(end: RealVector) {
+  constructor(end: RealVector, type: PathCommandType) {
     this.$end = end;
+    this.$type = type;
   }
 
   /** Sets this path command as a relative command. */
@@ -3946,7 +3993,7 @@ abstract class PathCommand {
 /** An object corresponding to a moveto command. */
 class MCommand extends PathCommand {
   constructor(end: RealVector) {
-    super(end);
+    super(end, PathCommandType.M);
   }
   toString(): string {
     return `${this.$relative ? "m" : "M"}${this.$end.x},${this.$end.y}`;
@@ -3958,10 +4005,15 @@ const moveTo = (x: number, y: number, z: number = 0) => (
   new MCommand(rvector([x, y, z]))
 );
 
+/** Returns true if the given command is an MCommand. */
+const isMCommand = (command: PathCommand): command is MCommand => (
+  command.$type === PathCommandType.M
+);
+
 /** An object corresponding to a lineto command. */
 class ZCommand extends PathCommand {
   constructor(end: RealVector) {
-    super(end);
+    super(end, PathCommandType.Z);
   }
   toString(): string {
     return `Z`;
@@ -3971,10 +4023,15 @@ const zCommand = (endX: number, endY: number, endZ: number = 0) => (
   new ZCommand(rvector([endX, endY, endZ]))
 );
 
+/** Returns true if the given command is a ZCommand.  */
+const isZCommand = (command: PathCommand): command is ZCommand => (
+  command.$type === PathCommandType.Z
+);
+
 /** An object corresponding to a lineto command. */
 class LCommand extends PathCommand {
   constructor(end: RealVector) {
-    super(end);
+    super(end, PathCommandType.L);
   }
   toString(): string {
     return `${this.$relative ? "l" : "L"}${this.$end.x} ${this.$end.y}`;
@@ -3984,6 +4041,10 @@ class LCommand extends PathCommand {
 /** Returns a lineto command. */
 const lineTo = (x: number, y: number, z: number = 0) => (
   new LCommand(rvector([x, y, z]))
+);
+
+const isLCommand = (command: PathCommand): command is LCommand => (
+  command.$type === PathCommandType.L
 );
 
 /** An object corresponding to an arcto command. */
@@ -3996,7 +4057,7 @@ class ACommand extends PathCommand {
     sweep: 0 | 1,
     end: RealVector,
   ) {
-    super(end);
+    super(end, PathCommandType.A);
     this.$rx = rx;
     this.$ry = ry;
     this.$xAxisRotation = xAxisRotation;
@@ -4078,11 +4139,16 @@ const arcTo = (
   )
 );
 
+/** Returns true if the given command is an ACommand. */
+const isACommand = (command: PathCommand): command is ACommand => (
+  command.$type === PathCommandType.A
+);
+
 /** An object corresponding to a quadratic Bezier curve command. */
 class QCommand extends PathCommand {
   $control: RealVector;
   constructor(control: RealVector, end: RealVector) {
-    super(end);
+    super(end, PathCommandType.Q);
     this.$control = control;
   }
   toString(): string {
@@ -4107,12 +4173,17 @@ const qbcTo = (
   )
 );
 
+/** Returns true if the given command is a QCommand. */
+const isQCommand = (command: PathCommand): command is QCommand => (
+  command.$type === PathCommandType.Q
+);
+
 /** An object corresponding to a cubic Bezier curve command. */
 class CCommand extends PathCommand {
   $control1: RealVector;
   $control2: RealVector;
   constructor(control1: RealVector, control2: RealVector, end: RealVector) {
-    super(end);
+    super(end, PathCommandType.C);
     this.$control1 = control1;
     this.$control2 = control2;
   }
@@ -4142,9 +4213,14 @@ const cbcTo = (
   )
 );
 
+/** Returns true if the given command is a CCommand. */
+const isCCommand = (command: PathCommand): command is CCommand => (
+  command.$type === PathCommandType.C
+);
+
 interface Fillable {
   /** The fill color for this fillable. The default is `"none"`. */
-  $fill: string;
+  $fill?: string;
 
   /** Sets the fill color for this fillable. */
   fill(color: string): this;
@@ -4152,7 +4228,7 @@ interface Fillable {
   /**
    * The fill opacity for this fillable.
    */
-  $fillOpacity: number;
+  $fillOpacity?: number;
 
   /**
    * Sets the fill opacity for this fillable.
@@ -4163,16 +4239,16 @@ interface Fillable {
   fillOpacity(opacity: number): this;
 }
 
-function strokable<BaseClass extends Constructor>(
+function fillable<BaseClass extends Constructor>(
   BaseClass: BaseClass,
 ): MixOf<BaseClass, Fillable> {
   return class extends BaseClass implements Fillable {
-    $fill: string = "none";
+    $fill?: string;
     fill(color: string): this {
       this.$fill = color;
       return this;
     }
-    $fillOpacity: number = 1;
+    $fillOpacity?: number;
     fillOpacity(opacity: number): this {
       this.$fillOpacity = clamp(0, opacity, 1);
       return this;
@@ -4182,19 +4258,19 @@ function strokable<BaseClass extends Constructor>(
 
 interface Strokable {
   /** The stroke’s thickness. */
-  $strokeWidth: number;
+  $strokeWidth?: number;
 
   /** Sets the stroke’s thickness. */
   strokeWidth(width: number): this;
 
   /** The stroke’s color. Defaults to `"initial"` */
-  $stroke: string;
+  $stroke?: string;
 
   /** Sets the stroke’s color. */
   stroke(color: string): this;
 
   /** The stroke’s opacity. */
-  $strokeOpacity: number;
+  $strokeOpacity?: number;
 
   /**
    * Sets the stroke’s opacity to the given value.
@@ -4205,7 +4281,7 @@ interface Strokable {
   /**
    * The stroke’s stroke dash array property.
    */
-  $strokeDashArray: string;
+  $strokeDashArray?: string;
 
   /**
    * Sets the stroke’s stroke dash array property.
@@ -4217,26 +4293,26 @@ interface Strokable {
  * A mixin function that inserts SVG fill
  * properties and methods.
  */
-function fillable<BaseClass extends Constructor>(
+function strokable<BaseClass extends Constructor>(
   BaseClass: BaseClass,
 ): MixOf<BaseClass, Strokable> {
   return class extends BaseClass implements Strokable {
-    $strokeWidth: number = 1;
+    $strokeWidth?: number;
     strokeWidth(width: number) {
       this.$strokeWidth = width;
       return this;
     }
-    $stroke: string = "black";
+    $stroke?: string;
     stroke(color: string) {
       this.$stroke = color;
       return this;
     }
-    $strokeOpacity: number = 1;
+    $strokeOpacity?: number;
     strokeOpacity(value: number) {
       this.$strokeOpacity = clamp(0, value, 1);
       return this;
     }
-    $strokeDashArray: string = "1";
+    $strokeDashArray?: string;
     strokeDashArray(...values: number[]) {
       this.$strokeDashArray = values.join(",");
       return this;
@@ -4252,6 +4328,12 @@ enum RENDERABLE_TYPE {
 }
 
 abstract class Renderable {
+  abstract fit(
+    parentXDomain: [number, number],
+    parentYDomain: [number, number],
+    parentZDomain: [number, number],
+  ): this;
+
   /**
    * The type of this renderable. This property
    * may be set to one of the following:
@@ -4266,6 +4348,11 @@ abstract class Renderable {
    *     mixins.
    */
   $type: RENDERABLE_TYPE;
+  $coordinateSystem: CoordinateSystem = coord([-10, 10], [-10, 10], [-10, 10]);
+  coordinateSystem(system: CoordinateSystem) {
+    this.$coordinateSystem = system;
+    return this;
+  }
   constructor(type: RENDERABLE_TYPE) {
     this.$type = type;
   }
@@ -4285,7 +4372,27 @@ class Group extends Renderable {
     super(RENDERABLE_TYPE.RAW_GROUP);
     this.$children = children;
   }
+
+  coordinateSystem(system: CoordinateSystem): this {
+    this.$coordinateSystem = system;
+    this.$children.forEach((child) => {
+      child.coordinateSystem(this.$coordinateSystem);
+    });
+    return this;
+  }
+
+  fit(
+    parentXDomain: [number, number],
+    parentYDomain: [number, number],
+    parentZDomain: [number, number],
+  ) {
+    this.$children.forEach((c) => {
+      c.fit(parentXDomain, parentYDomain, parentZDomain);
+    });
+    return this;
+  }
 }
+
 const $GROUP = fillable(strokable(Group));
 
 export type RenderableGroup = Group & Fillable & Strokable;
@@ -4306,6 +4413,49 @@ export const isGroup = (object: Renderable): object is RenderableGroup => (
 
 /** An object corresponding to an SVG path. */
 class Path extends Renderable {
+  fit(
+    parentXDomain: [number, number],
+    parentYDomain: [number, number],
+    parentZDomain: [number, number],
+  ) {
+    const xDomain = this.$coordinateSystem.$xDomain;
+    const yDomain = this.$coordinateSystem.$yDomain;
+    const zDomain = this.$coordinateSystem.$zDomain;
+    const xscale = range(xDomain, parentXDomain);
+    const yscale = range(yDomain, parentYDomain);
+    const zscale = range(zDomain, parentZDomain);
+    this.$commands.forEach((command) => {
+      command.$end = rvector([
+        xscale(command.$end.x),
+        yscale(command.$end.y),
+        zscale(command.$end.z),
+      ]);
+      if (isACommand(command)) {
+        command.$rx = xscale(command.$rx);
+        command.$ry = yscale(command.$ry);
+      }
+      if (isQCommand(command)) {
+        command.$control = rvector([
+          xscale(command.$control.x),
+          yscale(command.$control.y),
+          zscale(command.$control.z),
+        ]);
+      }
+      if (isCCommand(command)) {
+        command.$control1 = rvector([
+          xscale(command.$control1.x),
+          yscale(command.$control1.y),
+          zscale(command.$control1.z),
+        ]);
+        command.$control2 = rvector([
+          xscale(command.$control2.x),
+          yscale(command.$control2.y),
+          zscale(command.$control2.z),
+        ]);
+      }
+    });
+    return this;
+  }
   /** The list of commands comprising this SVG path. */
   $commands: PathCommand[] = [];
 
@@ -4493,7 +4643,7 @@ const $PATH = fillable(strokable(Path));
  * An object corresponding to an SVG path,
  * with stroke and fill properties/methods.
  */
-type RenderablePath = Path & Strokable & Fillable;
+export type RenderablePath = Path & Strokable & Fillable;
 
 /**
  * Returns a new RenderablePath (an object corresponding
@@ -4512,6 +4662,125 @@ export const path = (
  */
 export const isPath = (object: Renderable): object is RenderablePath => (
   object.$type === RENDERABLE_TYPE.RENDERABLE_PATH
+);
+
+/** Returns a path corresponding to a line. */
+export const line2D = (start: [number, number], end: [number, number]) => (
+  path(start[0], start[1]).L(end[0], end[1])
+);
+
+export const grid2D = (
+  xDomain: [number, number],
+  yDomain: [number, number],
+  increment: number,
+) => {
+  const elements = [];
+  const xMin = xDomain[0];
+  const xMax = xDomain[1];
+  const yMin = yDomain[0];
+  const yMax = yDomain[1];
+  for (let x = xDomain[0]; x <= xDomain[1]; x += increment) {
+    elements.push(line2D([x, yMin], [x, yMax]));
+  }
+  for (let y = yDomain[0]; y <= yDomain[1]; y += increment) {
+    elements.push(line2D([xMin, y], [xMax, y]));
+  }
+  return group(elements);
+};
+
+class Plot2D {
+  $f: string;
+  /** The number of samples this Plot2D takes to plot this function. */
+  $samples: number = 800;
+
+  /**
+   * Sets the number of samples to take to plot this function.
+   * Defaults to `800`. More samples will result in a finer
+   * plot, but at the cost of performance.
+   */
+  samples(count: number) {
+    this.$samples = count;
+    return this;
+  }
+
+  /** The domain for this Plot2D’s function. */
+  $domain: [number, number];
+
+  /** Sets the domain for this Plot2D. */
+  domain(interval: [number, number]) {
+    this.$domain = interval;
+    return this;
+  }
+
+  /** The range for this Plot2D’s function. */
+  $range: [number, number];
+
+  /** Sets the range for this Plot2D. */
+  range(interval: [number, number]) {
+    this.$range = interval;
+    return this;
+  }
+
+  constructor(f: string, domain: [number, number], range: [number, number]) {
+    this.$f = f;
+    this.$domain = domain;
+    this.$range = range;
+  }
+
+  path() {
+    const xmin = this.$domain[0];
+    const xmax = this.$domain[1];
+    const ymin = this.$range[0];
+    const ymax = this.$range[1];
+    const engine = compiler();
+    const out: PathCommand[] = [];
+    const f = engine.execute(`fn ${this.$f};`);
+    if (!isCallable(f)) {
+      return path(0, 0, 0);
+    }
+    const dataset: [number, number][] = [];
+    for (let i = -this.$samples; i < this.$samples; i++) {
+      const x = (i / this.$samples) * xmax;
+      const _y = f.call(engine.engine, [x]);
+      if (typeof _y !== "number") continue;
+      const y = _y;
+      const point: [number, number] = [x, y];
+      if (Number.isNaN(y) || y < ymin || ymax < y) {
+        point[1] = NaN;
+      }
+      if (x < xmin || xmax < x) continue;
+      else dataset.push(point);
+    }
+    let moved = false;
+    for (let i = 0; i < dataset.length; i++) {
+      const datum = dataset[i];
+      if (!Number.isNaN(datum[1])) {
+        if (!moved) {
+          out.push(moveTo(datum[0], datum[1], 1));
+          moved = true;
+        } else {
+          out.push(lineTo(datum[0], datum[1], 1));
+        }
+      } else {
+        const next = dataset[i + 1];
+        if (next !== undefined && !Number.isNaN(next[1])) {
+          out.push(moveTo(next[0], next[1], 1));
+        }
+      }
+    }
+    const p = path(out[0].$end.x, out[0].$end.y, out[0].$end.z);
+    for (let i = 1; i < out.length; i++) {
+      p.$commands.push(out[i]);
+    }
+    return p;
+  }
+}
+export const plot2D = (
+  f: string,
+  domain: [number, number],
+  range: [number, number],
+) => (
+  new Plot2D(f, domain, range)
 );
 
 // § Compiler Module ===========================================================
@@ -5668,6 +5937,8 @@ class ParserState {
     this.next();
   }
 }
+
+/** Returns a new parser state. */
 const enstate = (code: string) => (
   new ParserState(code)
 );
@@ -7207,7 +7478,7 @@ class Fn extends Callable {
  * Returns true, and asserts,
  * if the given `x` is an Fn object.
  */
-const isCallable = (x: any): x is Fn => (
+const isCallable = (x: any): x is Callable => (
   x instanceof Callable
 );
 
@@ -7804,7 +8075,10 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
       ...settings.nativeFunctions,
     };
   }
+  const engine = new Interpreter(defaultSettings);
   return {
+    /** The compiler’s underlying engine. */
+    engine,
     /**
      * Returns a stringified array of tokens.
      */
@@ -7843,15 +8117,14 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
         print(erm);
         return erm;
       }
-      const interpreter = new Interpreter(defaultSettings);
       const statements = ast.unwrap();
-      const resolved = resolvable(interpreter).resolved(statements);
+      const resolved = resolvable(engine).resolved(statements);
       if (resolved.isLeft()) {
         const erm = resolved.unwrap().print();
         print(erm);
         return erm;
       }
-      const out = interpreter.interpret(statements);
+      const out = engine.interpret(statements);
       if (out.isLeft()) {
         const erm = out.unwrap().print();
         print(erm);
@@ -7861,6 +8134,3 @@ export const compiler = (settings: Partial<InterpreterSettings> = {}) => {
     },
   };
 };
-
-const k = rvector([0, 1, 2]);
-print(k.z);

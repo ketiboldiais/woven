@@ -3847,11 +3847,34 @@ type PAR =
 class SVG {
   /** The width of this SVG, in pixels. */
   $width: number;
+
   /** The height of this SVG, in pixels. */
   $height: number;
+
   /** This SVG’s viewbox. */
   $viewBox: string;
+
+  /** This SVG’s preserveAspectRatio property.  */
   $preserveAspectRatio: `${PAR} ${"meet" | "slice"}`;
+
+  /** An array of child elements for this SVG. */
+  $children: Renderable[] = [];
+
+  /** Appends the provided children to this SVG. */
+  children(renderables: Renderable[]) {
+    renderables.forEach((c) => this.$children.push(c));
+    return this;
+  }
+
+  /**
+   * Returns an array whose elements are the result
+   * of applying the callback `f` to each child
+   * of this SVG.
+   */
+  map<K>(f: (child: Renderable, index: number) => K) {
+    return this.$children.map((child, index) => f(child, index));
+  }
+
   constructor(width: number, height: number) {
     this.$width = width;
     this.$height = height;
@@ -4113,8 +4136,42 @@ const cbcTo = (
   )
 );
 
-interface Filled {
+interface Fillable {
+  /** The fill color for this fillable. The default is `"none"`. */
   $fill: string;
+
+  /** Sets the fill color for this fillable. */
+  fill(color: string): this;
+
+  /**
+   * The fill opacity for this fillable.
+   */
+  $fillOpacity: number;
+
+  /**
+   * Sets the fill opacity for this fillable.
+   * This method expects a number ranging from 0 to 1.
+   * 0 is entirely transparent, and 1 (the default) is
+   * entirely opaque.
+   */
+  fillOpacity(opacity: number): this;
+}
+
+function strokable<BaseClass extends Constructor>(
+  BaseClass: BaseClass,
+): MixOf<BaseClass, Fillable> {
+  return class extends BaseClass implements Fillable {
+    $fill: string = "none";
+    fill(color: string): this {
+      this.$fill = color;
+      return this;
+    }
+    $fillOpacity: number = 1;
+    fillOpacity(opacity: number): this {
+      this.$fillOpacity = clamp(0, opacity, 1);
+      return this;
+    }
+  };
 }
 
 interface Strokable {
@@ -4151,10 +4208,10 @@ interface Strokable {
 }
 
 /**
- * A mixin function that inserts SVG stroke
+ * A mixin function that inserts SVG fill
  * properties and methods.
  */
-function strokable<BaseClass extends Constructor>(
+function fillable<BaseClass extends Constructor>(
   BaseClass: BaseClass,
 ): MixOf<BaseClass, Strokable> {
   return class extends BaseClass implements Strokable {
@@ -4181,8 +4238,68 @@ function strokable<BaseClass extends Constructor>(
   };
 }
 
+enum RENDERABLE_TYPE {
+  RENDERABLE_PATH,
+  RENDERABLE_GROUP,
+  RAW_PATH,
+  RAW_GROUP,
+}
+
+abstract class Renderable {
+  /**
+   * The type of this renderable. This property
+   * may be set to one of the following:
+   * 
+   * 1. `RENDERABLE_TYPE.RENDERABLE_PATH` - A Path object with
+   *     the mixins of strokable and fillable.
+   * 2. `RENDERABLE_TYPE.RENDERABLE_GROUP` - A Group object with
+   *     the mixins of strokable and fillable.
+   * 3. `RENDERABLE_TYPE.RAW_PATH` - A Path object without any
+   *     mixins.
+   * 4. `RENDERABLE_TYPE.RAW_GROUP` - A Group object without any
+   *     mixins.
+   */
+  $type: RENDERABLE_TYPE;
+  constructor(type: RENDERABLE_TYPE) {
+    this.$type = type;
+  }
+  /** Sets the type of this renderable. */
+  typed(type: RENDERABLE_TYPE) {
+    this.$type = type;
+    return this;
+  }
+}
+
+/**
+ * An object corresponding to an SVG group.
+ */
+class Group extends Renderable {
+  $children: Renderable[];
+  constructor(children: Renderable[]) {
+    super(RENDERABLE_TYPE.RAW_GROUP);
+    this.$children = children;
+  }
+}
+const $GROUP = fillable(strokable(Group));
+
+export type RenderableGroup = Group & Fillable & Strokable;
+
+/**
+ * Returns an object corresponding to an SVG group.
+ */
+export const group = (children: Renderable[]): RenderableGroup => (
+  new $GROUP(children).typed(RENDERABLE_TYPE.RENDERABLE_GROUP)
+);
+
+/**
+ * Returns true if the given `object` is a RenderableGroup, false otherwise.
+ */
+export const isGroup = (object: Renderable): object is RenderableGroup => (
+  object.$type === RENDERABLE_TYPE.RENDERABLE_GROUP
+);
+
 /** An object corresponding to an SVG path. */
-class Path {
+class Path extends Renderable {
   /** The list of commands comprising this SVG path. */
   $commands: PathCommand[] = [];
 
@@ -4190,9 +4307,11 @@ class Path {
   $cursor: RealVector;
 
   constructor(startX: number, startY: number, startZ: number = 0) {
+    super(RENDERABLE_TYPE.RAW_PATH);
     this.$commands = [moveTo(startX, startY, startZ)];
     this.$cursor = rvector([startX, startY, startZ]);
   }
+
   /**
    * Appends a `Z` command to this path’s command list
    * (i.e., closes this path).
@@ -4362,13 +4481,32 @@ class Path {
     return this;
   }
 }
-const PATH = strokable(Path);
+const $PATH = fillable(strokable(Path));
 
+/**
+ * An object corresponding to an SVG path,
+ * with stroke and fill properties/methods.
+ */
+type RenderablePath = Path & Strokable & Fillable;
+
+/**
+ * Returns a new RenderablePath (an object corresponding
+ * to an SVG path, with stroke and fill properties/methods).
+ */
 export const path = (
   startX: number,
   startY: number,
   startZ: number = 0,
-) => (new PATH(startX, startY, startZ));
+): RenderablePath => (new $PATH(startX, startY, startZ).typed(
+  RENDERABLE_TYPE.RENDERABLE_PATH,
+));
+
+/**
+ * Returns true if the given object is a RenderablePath.
+ */
+export const isPath = (object: Renderable): object is RenderablePath => (
+  object.$type === RENDERABLE_TYPE.RENDERABLE_PATH
+);
 
 // § Compiler Module ===========================================================
 // This section marks the beginning of Woven’s interpreter.

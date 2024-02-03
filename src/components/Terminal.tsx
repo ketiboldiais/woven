@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import css from './Terminal.module.scss';
-import { compiler, strof, svg } from '../lib/main';
+import { compiler, strof, svg, path } from '../lib/main';
 
 const Sketch = () => {
-  const s = svg(200,200);
+  const s = svg(200, 200);
+  const p = path(10, 10).Q([20, 20], [10, 40]).stroke('firebrick');
   return (
     <svg viewBox={s.$viewBox} preserveAspectRatio={s.$preserveAspectRatio}>
+      <path d={p.toString()} stroke={p.$stroke} strokeWidth={p.$strokeWidth} fill={'none'} />
     </svg>
   );
 };
@@ -39,7 +41,7 @@ export default function Terminal() {
       </div>
       <textarea value={code} onChange={(e) => setCode(e.target.value)} />
       <pre>{output}</pre>
-      <Sketch/>
+      <Sketch />
     </div>
   );
 }

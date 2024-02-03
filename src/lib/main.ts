@@ -3892,70 +3892,72 @@ export const svg = (width: number, height: number) => (
 );
 
 // SVG Commands ----------------------------------------------------------------
+/** An object representation of an SVG path command. */
 abstract class PathCommand {
+  /** Returns the string representation of this path command. */
   abstract toString(): string;
+
+  /** The endpoint of this path command. */
   $end: RealVector;
+
+  /** A property indicating whether this path command is a relative command. */
+  $relative: boolean = false;
+
   constructor(end: RealVector) {
     this.$end = end;
   }
+
+  /** Sets this path command as a relative command. */
+  asRelative() {
+    this.$relative = true;
+    return this;
+  }
 }
-/**
- * An object corresponding to a moveto command.
- */
+
+/** An object corresponding to a moveto command. */
 class MCommand extends PathCommand {
   constructor(end: RealVector) {
     super(end);
   }
   toString(): string {
-    return `M${this.$end.x} ${this.$end.y}`;
+    return `${this.$relative ? "m" : "M"}${this.$end.x},${this.$end.y}`;
   }
 }
+
+/** Returns a moveto command. */
 const moveTo = (x: number, y: number, z: number = 0) => (
   new MCommand(rvector([x, y, z]))
 );
 
-/**
- * An object corresponding to a lineto command.
- */
+/** An object corresponding to a lineto command. */
+class ZCommand extends PathCommand {
+  constructor(end: RealVector) {
+    super(end);
+  }
+  toString(): string {
+    return `Z`;
+  }
+}
+const zCommand = (endX: number, endY: number, endZ: number = 0) => (
+  new ZCommand(rvector([endX, endY, endZ]))
+);
+
+/** An object corresponding to a lineto command. */
 class LCommand extends PathCommand {
   constructor(end: RealVector) {
     super(end);
   }
   toString(): string {
-    return `L${this.$end.x} ${this.$end.y}`;
+    return `${this.$relative ? "l" : "L"}${this.$end.x} ${this.$end.y}`;
   }
 }
 
+/** Returns a lineto command. */
 const lineTo = (x: number, y: number, z: number = 0) => (
   new LCommand(rvector([x, y, z]))
 );
 
-class HCommand extends PathCommand {
-  constructor(end: RealVector) {
-    super(end);
-  }
-  toString(): string {
-    return `H${this.$end.x} ${this.$end.y}`;
-  }
-}
-
-const hLineTo = (x: number, y: number, z: number = 0) => (
-  new HCommand(rvector([x, y, z]))
-);
-
-class VCommand extends PathCommand {
-  constructor(end: RealVector) {
-    super(end);
-  }
-  toString(): string {
-    return `V${this.$end.x} ${this.$end.y}`;
-  }
-}
-
-const vLineTo = (x: number, y: number, z: number = 0) => (
-  new VCommand(rvector([x, y, z]))
-);
-
+/** An object corresponding to an arcto command. */
 class ACommand extends PathCommand {
   constructor(
     rx: number,
@@ -4020,10 +4022,13 @@ class ACommand extends PathCommand {
   }
 
   toString(): string {
-    return `A${this.$rx},${this.$ry} ${this.$xAxisRotation}  ${this.$largeArc} ${this.$sweep} ${this.$end.x},${this.$end.y}`;
+    return `${
+      this.$relative ? "a" : "A"
+    }${this.$rx},${this.$ry} ${this.$xAxisRotation}  ${this.$largeArc} ${this.$sweep} ${this.$end.x},${this.$end.y}`;
   }
 }
 
+/** Returns an arcto command. */
 const arcTo = (
   rx: number,
   ry: number,
@@ -4044,6 +4049,7 @@ const arcTo = (
   )
 );
 
+/** An object corresponding to a quadratic Bezier curve command. */
 class QCommand extends PathCommand {
   $control: RealVector;
   constructor(control: RealVector, end: RealVector) {
@@ -4051,10 +4057,13 @@ class QCommand extends PathCommand {
     this.$control = control;
   }
   toString(): string {
-    return `Q${this.$control.x},${this.$control.y} ${this.$end.x},${this.$end.y}`;
+    return `${
+      this.$relative ? "q" : "Q"
+    }${this.$control.x},${this.$control.y} ${this.$end.x},${this.$end.y}`;
   }
 }
 
+/** Returns an absolute quadratic Bezier curve command. */
 const qbcTo = (
   control: [number, number] | [number, number, number],
   end: [number, number] | [number, number, number],
@@ -4069,6 +4078,7 @@ const qbcTo = (
   )
 );
 
+/** An object corresponding to a cubic Bezier curve command. */
 class CCommand extends PathCommand {
   $control1: RealVector;
   $control2: RealVector;
@@ -4078,10 +4088,13 @@ class CCommand extends PathCommand {
     this.$control2 = control2;
   }
   toString(): string {
-    return `C${this.$control1.x},${this.$control1.y} ${this.$control2.x} ${this.$control2.y} ${this.$end.x},${this.$end.y}`;
+    return `${
+      this.$relative ? "c" : "C"
+    }${this.$control1.x},${this.$control1.y} ${this.$control2.x} ${this.$control2.y} ${this.$end.x},${this.$end.y}`;
   }
 }
 
+/** Returns a cubic Bezier curve command. */
 const cbcTo = (
   control1: [number, number] | [number, number, number],
   control2: [number, number] | [number, number, number],
@@ -4100,7 +4113,11 @@ const cbcTo = (
   )
 );
 
-interface Stroked {
+interface Filled {
+  $fill: string;
+}
+
+interface Strokable {
   /** The stroke’s thickness. */
   $strokeWidth: number;
 
@@ -4133,10 +4150,14 @@ interface Stroked {
   strokeDashArray(...values: number[]): this;
 }
 
-function stroked<BaseClass extends Constructor>(
+/**
+ * A mixin function that inserts SVG stroke
+ * properties and methods.
+ */
+function strokable<BaseClass extends Constructor>(
   BaseClass: BaseClass,
-): MixOf<BaseClass, Stroked> {
-  return class extends BaseClass implements Stroked {
+): MixOf<BaseClass, Strokable> {
+  return class extends BaseClass implements Strokable {
     $strokeWidth: number = 1;
     strokeWidth(width: number) {
       this.$strokeWidth = width;
@@ -4159,14 +4180,195 @@ function stroked<BaseClass extends Constructor>(
     }
   };
 }
-type Position = [number, number] | [number, number, number];
 
+/** An object corresponding to an SVG path. */
 class Path {
+  /** The list of commands comprising this SVG path. */
   $commands: PathCommand[] = [];
-  constructor(startX: number, startY: number, startZ: number) {
-    this.$commands = [];
+
+  /** The current position of the path’s cursor. */
+  $cursor: RealVector;
+
+  constructor(startX: number, startY: number, startZ: number = 0) {
+    this.$commands = [moveTo(startX, startY, startZ)];
+    this.$cursor = rvector([startX, startY, startZ]);
+  }
+  /**
+   * Appends a `Z` command to this path’s command list
+   * (i.e., closes this path).
+   */
+  Z() {
+    this.$commands.push(
+      zCommand(this.$cursor.x, this.$cursor.y, this.$cursor.z),
+    );
+    return this;
+  }
+
+  /**
+   * Returns the path command string for this SVG path.
+   * I.e., the value taken by the `d` attribute for
+   * the <path> element.
+   */
+  toString() {
+    const out = this.$commands.map((command) => command.toString()).join("");
+    return out;
+  }
+
+  /** Appends to this path’s command list an absolute moveto command. */
+  M(x: number, y: number, z: number = 0) {
+    this.$commands.push(moveTo(x, y, z));
+    this.$cursor = rvector([x, y, z]);
+    return this;
+  }
+
+  /** Appends to this path’s command list a relative moveto command. */
+  m(x: number, y: number, z: number = 0) {
+    this.$commands.push(moveTo(x, y, z).asRelative());
+    this.$cursor = rvector([
+      this.$cursor.x + x,
+      this.$cursor.y + y,
+      this.$cursor.z + z,
+    ]);
+    return this;
+  }
+
+  /** Appends to this path’s command list an absolute lineto command. */
+  L(x: number, y: number, z: number = 0) {
+    this.$commands.push(lineTo(x, y, z));
+    this.$cursor = rvector([x, y, z]);
+    return this;
+  }
+
+  /** Appends to this path’s command list a relative lineto command. */
+  l(x: number, y: number, z: number = 0) {
+    this.$commands.push(lineTo(x, y, z).asRelative());
+    this.$cursor = rvector([
+      this.$cursor.x + x,
+      this.$cursor.y + y,
+      this.$cursor.z + z,
+    ]);
+    return this;
+  }
+
+  /** Appends to this path’s command list an absolute arcto command. */
+  A(
+    rx: number,
+    ry: number,
+    xAxisRotation: number,
+    largeArc: 0 | 1,
+    sweep: 0 | 1,
+    end: [number, number] | [number, number, number],
+  ) {
+    const a = arcTo(rx, ry, xAxisRotation, largeArc, sweep, end);
+    this.$commands.push(a);
+    this.$cursor = rvector([
+      a.$end.x,
+      a.$end.y,
+      a.$end.z,
+    ]);
+    return this;
+  }
+
+  /** Appends to this path’s command list a relative arcto command. */
+  a(
+    rx: number,
+    ry: number,
+    xAxisRotation: number,
+    largeArc: 0 | 1,
+    sweep: 0 | 1,
+    end: [number, number] | [number, number, number],
+  ) {
+    const a = arcTo(rx, ry, xAxisRotation, largeArc, sweep, end);
+    this.$commands.push(a.asRelative());
+    this.$cursor = rvector([
+      this.$cursor.x + a.$end.x,
+      this.$cursor.y + a.$end.y,
+      this.$cursor.z + a.$end.z,
+    ]);
+    return this;
+  }
+
+  /**
+   * Appends to this path’s command list an
+   * absolute quadratic Bezier curve command.
+   */
+  Q(
+    control: [number, number] | [number, number, number],
+    end: [number, number] | [number, number, number],
+  ) {
+    const q = qbcTo(control, end);
+    this.$commands.push(q);
+    this.$cursor = rvector([
+      q.$end.x,
+      q.$end.y,
+      q.$end.z,
+    ]);
+    return this;
+  }
+
+  /**
+   * Appends to this path’s command list a
+   * relative quadratic Bezier curve command.
+   */
+  q(
+    control: [number, number] | [number, number, number],
+    end: [number, number] | [number, number, number],
+  ) {
+    const q = qbcTo(control, end);
+    this.$commands.push(q.asRelative());
+    this.$cursor = rvector([
+      this.$cursor.x + q.$end.x,
+      this.$cursor.y + q.$end.y,
+      this.$cursor.z + q.$end.z,
+    ]);
+    return this;
+  }
+
+  /**
+   * Appends to this path’s command list an
+   * absolute cubic Bezier curve command.
+   */
+  C(
+    control1: [number, number] | [number, number, number],
+    control2: [number, number] | [number, number, number],
+    end: [number, number] | [number, number, number],
+  ) {
+    const c = cbcTo(control1, control2, end);
+    this.$commands.push(c);
+    this.$cursor = rvector([
+      c.$end.x,
+      c.$end.y,
+      c.$end.z,
+    ]);
+    return this;
+  }
+
+  /**
+   * Appends to this path’s command list a relative
+   * cubic Bezier curve command.
+   */
+  c(
+    control1: [number, number] | [number, number, number],
+    control2: [number, number] | [number, number, number],
+    end: [number, number] | [number, number, number],
+  ) {
+    const c = cbcTo(control1, control2, end);
+    this.$commands.push(c.asRelative());
+    this.$cursor = rvector([
+      this.$cursor.x + c.$end.x,
+      this.$cursor.y + c.$end.y,
+      this.$cursor.z + c.$end.z,
+    ]);
+    return this;
   }
 }
+const PATH = strokable(Path);
+
+export const path = (
+  startX: number,
+  startY: number,
+  startZ: number = 0,
+) => (new PATH(startX, startY, startZ));
 
 // § Compiler Module ===========================================================
 // This section marks the beginning of Woven’s interpreter.
@@ -4258,8 +4460,7 @@ abstract class ASTNode {
 /**
  * A class corresponding to an expression node.
  */
-abstract class Expr extends ASTNode {
-}
+abstract class Expr extends ASTNode {}
 
 /**
  * A class corresponding to a nil literal expression.

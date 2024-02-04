@@ -4,7 +4,6 @@ import {
   compiler,
   strof,
   svg,
-  path,
   isPath,
   isGroup,
   RenderablePath,
@@ -15,6 +14,10 @@ import {
   coord,
   plot2D,
   tuple,
+  circle,
+  text,
+  RenderableText,
+  isText,
 } from '../lib/main';
 
 const Path = ({ of }: { of: RenderablePath }) => (
@@ -41,30 +44,48 @@ const Group = ({ of }: { of: RenderableGroup }) => (
         return <Path of={c} key={`path-${i}`} />;
       } else if (isGroup(c)) {
         return <Group of={c} key={`group-${i}`} />;
-      } else {
+      } else if (isText(c)) {
+        return <Text of={c} key={`text-${i}`} />;
+      }
+      {
         return <></>;
       }
     })}
   </g>
 );
 
+const Text = ({ of }: { of: RenderableText }) => (
+  <text
+    x={of.$position.x}
+    y={of.$position.y}
+    fontSize={of.$fontSize}
+    fontFamily={of.$fontFamily}
+    fill={of.$fill}
+    textDecoration={of.$textDecoration}
+    textAnchor={of.$textAnchor}
+  >
+    {of.$text}
+  </text>
+);
+
 const Sketch = () => {
-  const xdomain = tuple(-10, 10);
-  const ydomain = tuple(-10, 10);
+  const xdomain = tuple(-2, 10);
+  const ydomain = tuple(-2, 10);
   const gridIncrement = 1;
   const cs = coord(xdomain, ydomain);
   const xAxis = line2D([-10, 0], [10, 0]);
   const yAxis = line2D([0, -10], [0, 10]);
   const axes = group([xAxis, yAxis]).stroke('grey').strokeWidth(0.5);
-  const curve = plot2D(`f(x) = cos(x) * (2x^2 - 1)`, xdomain, ydomain);
+  const curve = plot2D(`f(x) = ln(x)`, xdomain, ydomain);
+  const txt = text('(3,3)').at(3, 3).fontSize('8px').textAnchor('middle');
   const elements = group([
-    curve.path().stroke('red').fill('none'),
     axes,
-    grid2D(xdomain, ydomain, gridIncrement)
-      .stroke('lightgrey')
-      .strokeWidth(0.25),
+    grid2D(xdomain, ydomain, gridIncrement).stroke('lightgrey').strokeWidth(0.25),
+    curve.path().fill('none').stroke('red'),
+    circle(3, 3).r(0.1).path().fill('slategrey'),
+    txt,
   ]).coordinateSystem(cs);
-  const s = svg(200, 200).children([elements]).done();
+  const s = svg(250,250).children([elements]).done();
 
   return (
     <svg viewBox={s.$viewBox} preserveAspectRatio={s.$preserveAspectRatio}>
@@ -73,6 +94,8 @@ const Sketch = () => {
           return <Path of={c} key={`path-${i}`} />;
         } else if (isGroup(c)) {
           return <Group of={c} key={`group-${i}`} />;
+        } else if (isText(c)) {
+          return <Text of={c} key={`text-${i}`} />;
         } else {
           return <></>;
         }

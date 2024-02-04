@@ -43,6 +43,14 @@ const MAX_FLOAT = Number.MAX_VALUE;
 const sec = (x: number) => (1 / cos(x));
 const csc = (x: number) => (1 / sin(x));
 
+/** A utility method that generates a pseudorandom string. @param length - The max length of the resulting string. @param base - The base from which to draw characters. */
+const uid = (length: number = 4, base = 36) => (
+  Math.random()
+    .toString(base)
+    .replace(/[^a-z]+/g, "")
+    .substring(0, length + 1)
+);
+
 /** Returns a tuple. */
 export const tuple = <T extends any[]>(...data: T) => data;
 
@@ -141,6 +149,59 @@ const gcd = (a: number, b: number) => {
   }
   return abs(A);
 };
+
+/** An object corresponding to a graph vertex. */
+class Vertex {
+  /** The unique ID of this vertex. */
+  $id: string;
+
+  /** This vertex’s label. */
+  $label: string;
+
+  constructor(label: string, id: string) {
+    this.$id = id;
+    this.$label = label;
+  }
+
+  /** Sets the unique ID of this vertex. */
+  id(value: string) {
+    this.$id = value;
+    return this;
+  }
+
+  /** Labels this vertex with the given value. */
+  label(value: string) {
+    this.$label = value;
+    return this;
+  }
+}
+
+/**
+ * Returns a new Vertex. 
+ */
+const vertex = (label: string, id?: string) => (
+  new Vertex(label, id ? id : uid(5))
+);
+
+type EdgeType = "<-->" | "-->" | "---";
+
+/** An object corresponding to a graph edge. */
+class Edge {
+  $source: Vertex;
+  $target: Vertex;
+  $type: EdgeType;
+  constructor(source: Vertex, target: Vertex, type: EdgeType) {
+    this.$source = source;
+    this.$target = target;
+    this.$type = type;
+  }
+  get $id() {
+    return `${this.$source.$id}${this.$type}${this.$target.$id}`;
+  }
+}
+
+/** An object corresponding to a graph. */
+class Graph {}
 
 // § Tree Printer ==============================================================
 /**
@@ -4189,6 +4250,69 @@ const isCCommand = (command: PathCommand): command is CCommand => (
   command.$type === PathCommandType.C
 );
 
+interface Textual {
+  /** This textual’s text alignment property. */
+  $textAnchor?: "start" | "middle" | "end";
+
+  /** Sets this textual’s text alignment property. */
+  textAnchor(value: "start" | "middle" | "end"): this;
+
+  /** This textual’s text decoration property. */
+  $textDecoration?: string;
+
+  /** Sets this textual’s text decoration property. */
+  textDecoration(value: string): this;
+  /**
+   * The fill opacity for this fillable.
+   */
+  $fontSize?: string;
+
+  /**
+   * Sets the fill opacity for this fillable.
+   * This method expects a number ranging from 0 to 1.
+   * 0 is entirely transparent, and 1 (the default) is
+   * entirely opaque.
+   */
+  fontSize(size: string): this;
+
+  /**
+   * This Textual’s font family.
+   */
+  $fontFamily?: string;
+
+  /**
+   * Sets this Textual’s font family.
+   */
+  fontFamily(font: string): this;
+}
+
+function textual<BaseClass extends Constructor>(
+  BaseClass: BaseClass,
+): MixOf<BaseClass, Textual> {
+  return class extends BaseClass implements Textual {
+    $textAnchor?: "start" | "middle" | "end";
+    textAnchor(value: "start" | "middle" | "end"): this {
+      this.$textAnchor = value;
+      return this;
+    }
+    $textDecoration?: string;
+    textDecoration(value: string): this {
+      this.$textDecoration = value;
+      return this;
+    }
+    $fontSize?: string;
+    fontSize(size: string): this {
+      this.$fontSize = size;
+      return this;
+    }
+    $fontFamily?: string;
+    fontFamily(font: string): this {
+      this.$fontFamily = font;
+      return this;
+    }
+  };
+}
+
 interface Fillable {
   /** The fill color for this fillable. The default is `"none"`. */
   $fill?: string;
@@ -4294,8 +4418,10 @@ function strokable<BaseClass extends Constructor>(
 enum RENDERABLE_TYPE {
   RENDERABLE_PATH,
   RENDERABLE_GROUP,
+  RENDERABLE_TEXT,
   RAW_PATH,
   RAW_GROUP,
+  RAW_TEXT,
 }
 
 abstract class Renderable {
@@ -4382,6 +4508,55 @@ export const isGroup = (object: Renderable): object is RenderableGroup => (
   object.$type === RENDERABLE_TYPE.RENDERABLE_GROUP
 );
 
+class Text extends Renderable {
+  $position: RealVector = rvector([0, 0, 1]);
+
+  /** Sets the position of this text element. */
+  at(x: number, y: number, z: number = 1) {
+    this.$position = rvector([x, y, z]);
+    return this;
+  }
+
+  $text: string;
+  constructor(text: string) {
+    super(RENDERABLE_TYPE.RAW_TEXT);
+    this.$text = text;
+  }
+
+  fit(
+    parentXDomain: [number, number],
+    parentYDomain: [number, number],
+    parentZDomain: [number, number],
+  ): this {
+    const xDomain = this.$coordinateSystem.$xDomain;
+    const yDomain = this.$coordinateSystem.$yDomain;
+    const zDomain = this.$coordinateSystem.$zDomain;
+    const xscale = range(xDomain, parentXDomain);
+    const yscale = range(yDomain, parentYDomain);
+    const zscale = range(zDomain, parentZDomain);
+    this.$position = rvector([
+      xscale(this.$position.x),
+      yscale(this.$position.y),
+      zscale(this.$position.z),
+    ]);
+    return this;
+  }
+}
+
+const $TEXT = fillable(textual(Text));
+
+export type RenderableText = Text & Textual & Fillable;
+
+/** Returns an object corresponding to an SVG text element. */
+export const text = (textContent: string): RenderableText => (
+  new $TEXT(textContent).typed(RENDERABLE_TYPE.RENDERABLE_TEXT)
+);
+
+/** Returns true if the given renderable is a Text object. */
+export const isText = (object: Renderable): object is RenderableText => (
+  object.$type === RENDERABLE_TYPE.RENDERABLE_TEXT
+);
+
 /** An object corresponding to an SVG path. */
 class Path extends Renderable {
   fit(
@@ -4401,10 +4576,6 @@ class Path extends Renderable {
         yscale(command.$end.y),
         zscale(command.$end.z),
       ]);
-      if (isACommand(command)) {
-        command.$rx = xscale(command.$rx);
-        command.$ry = yscale(command.$ry);
-      }
       if (isQCommand(command)) {
         command.$control = rvector([
           xscale(command.$control.x),
@@ -4433,7 +4604,7 @@ class Path extends Renderable {
   /** The current position of the path’s cursor. */
   $cursor: RealVector;
 
-  constructor(startX: number, startY: number, startZ: number = 0) {
+  constructor(startX: number, startY: number, startZ: number = 1) {
     super(RENDERABLE_TYPE.RAW_PATH);
     this.$commands = [moveTo(startX, startY, startZ)];
     this.$cursor = rvector([startX, startY, startZ]);
@@ -4461,14 +4632,14 @@ class Path extends Renderable {
   }
 
   /** Appends to this path’s command list an absolute moveto command. */
-  M(x: number, y: number, z: number = 0) {
+  M(x: number, y: number, z: number = 1) {
     this.$commands.push(moveTo(x, y, z));
     this.$cursor = rvector([x, y, z]);
     return this;
   }
 
   /** Appends to this path’s command list a relative moveto command. */
-  m(x: number, y: number, z: number = 0) {
+  m(x: number, y: number, z: number = 1) {
     this.$commands.push(moveTo(x, y, z).asRelative());
     this.$cursor = rvector([
       this.$cursor.x + x,
@@ -4479,14 +4650,14 @@ class Path extends Renderable {
   }
 
   /** Appends to this path’s command list an absolute lineto command. */
-  L(x: number, y: number, z: number = 0) {
+  L(x: number, y: number, z: number = 1) {
     this.$commands.push(lineTo(x, y, z));
     this.$cursor = rvector([x, y, z]);
     return this;
   }
 
   /** Appends to this path’s command list a relative lineto command. */
-  l(x: number, y: number, z: number = 0) {
+  l(x: number, y: number, z: number = 1) {
     this.$commands.push(lineTo(x, y, z).asRelative());
     this.$cursor = rvector([
       this.$cursor.x + x,
@@ -4652,12 +4823,58 @@ export const grid2D = (
   const yMax = yDomain[1];
   for (let x = xDomain[0]; x <= xDomain[1]; x += increment) {
     elements.push(line2D([x, yMin], [x, yMax]));
+    // elements.push(text(`${x}`).at(x-.2, -.4).fontSize('4px'));
   }
   for (let y = yDomain[0]; y <= yDomain[1]; y += increment) {
     elements.push(line2D([xMin, y], [xMax, y]));
+    // elements.push(text(`${y}`).at(-.4, y-.2).fontSize('4px'));
   }
   return group(elements);
 };
+
+class Circle {
+  $radius: number = 1;
+  r(radius: number) {
+    this.$radius = radius;
+    return this;
+  }
+  $position: [number, number, number];
+  at(x: number, y: number, z: number = 1) {
+    this.$position = [x, y, z];
+    return this;
+  }
+  get $cy() {
+    return this.$position[1];
+  }
+  get $cx() {
+    return this.$position[0];
+  }
+  get $cz() {
+    return this.$position[2];
+  }
+  constructor(positionX: number, positionY: number, positionZ: number = 1) {
+    this.$position = [positionX, positionY, positionZ];
+  }
+  path() {
+    const out = path(
+      this.$cx,
+      this.$cy + this.$radius,
+    ).A(1, 1, 0, 0, 0, [this.$cx, this.$cy - this.$radius, this.$cz]).A(
+      1,
+      1,
+      0,
+      0,
+      0,
+      [this.$cx, this.$cy + this.$radius, this.$cz],
+    );
+    return out;
+  }
+}
+
+/** Returns an object corresponding to a circle. */
+export const circle = (x: number, y: number, z: number = 1) => (
+  new Circle(x, y, z)
+);
 
 class Plot2D {
   $f: string;

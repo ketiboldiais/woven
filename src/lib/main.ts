@@ -801,6 +801,106 @@ const isRealVector = (x: any): x is RealVector => (
   x instanceof RealVector
 );
 
+/** An object corresponding to a vector in R^3. */
+class Vector3D {
+  $x: number;
+  $y: number;
+  $z: number;
+  constructor(x: number, y: number, z: number) {
+    this.$x = x;
+    this.$y = y;
+    this.$z = z;
+  }
+
+  /**
+   * Returns a new Vector3D, whose elements are the result
+   * of applying `f` on `(a,b)`, where `a`
+   * is an element of this vector,
+   * and `b` is some other number.
+   */
+  binop(f: (a: number, b: number) => number, b: number) {
+    const x = f(this.$x, b);
+    const y = f(this.$y, b);
+    const z = f(this.$z, b);
+    return new Vector3D(x, y, z);
+  }
+
+  /**
+   * Returns a new Vector3D,
+   * whose elements are the result of applying `f`
+   * to each of this vector’s elements.
+   */
+  unop(f: (n: number) => number) {
+    const x = f(this.$x);
+    const y = f(this.$y);
+    const z = f(this.$z);
+    return new Vector3D(x, y, z);
+  }
+
+  /**
+   * Returns a new Vector3D corresponding
+   * to the negation of this vector.
+   */
+  neg() {
+    return this.unop((n) => -n);
+  }
+
+  /**
+   * Returns the cross product of this vector
+   * and the other vector.
+   */
+  cross(other: Vector3D) {
+    const a = this.$x;
+    const b = this.$y;
+    const c = this.$z;
+
+    const x = other.$x;
+    const y = other.$y;
+    const z = other.$z;
+
+    const bz = b * z;
+    const cy = c * y;
+    const cx = c * x;
+    const az = a * z;
+    const ay = a * y;
+    const bx = b * x;
+
+    return (new Vector3D(
+      bz - cy,
+      cx - az,
+      ay - bx,
+    ));
+  }
+
+  /**
+   * Returns the 3D distance between this vector
+   * and the provided vector. If this vector
+   * or the provided vector are not 3D vectors,
+   * an error is returned.
+   */
+  distance(other: Vector3D) {
+    const ax = this.$x;
+    const bx = other.$x;
+    const bx_ax = bx - ax;
+
+    const ay = this.$y;
+    const by = other.$y;
+    const by_ay = by - ay;
+
+    const az = this.$z;
+    const bz = other.$z;
+    const bz_az = bz - az;
+
+    const sum = bx_ax + by_ay + bz_az;
+    return sqrt(sum);
+  }
+}
+
+/** Returns a new Vector3D. */
+const v3D = (x: number, y: number, z: number) => (
+  new Vector3D(x, y, z)
+);
+
 /**
  * An object corresponding to a matrix.
  */
@@ -4047,12 +4147,12 @@ abstract class PathCommand {
   $type: PathCommandType;
 
   /** The endpoint of this path command. */
-  $end: RealVector;
+  $end: Vector3D;
 
   /** A property indicating whether this path command is a relative command. */
   $relative: boolean = false;
 
-  constructor(end: RealVector, type: PathCommandType) {
+  constructor(end: Vector3D, type: PathCommandType) {
     this.$end = end;
     this.$type = type;
   }
@@ -4066,17 +4166,17 @@ abstract class PathCommand {
 
 /** An object corresponding to a moveto command. */
 class MCommand extends PathCommand {
-  constructor(end: RealVector) {
+  constructor(end: Vector3D) {
     super(end, PathCommandType.M);
   }
   toString(): string {
-    return `${this.$relative ? "m" : "M"}${this.$end.x},${this.$end.y}`;
+    return `${this.$relative ? "m" : "M"}${this.$end.$x},${this.$end.$y}`;
   }
 }
 
 /** Returns a moveto command. */
-const moveTo = (x: number, y: number, z: number = 0) => (
-  new MCommand(rvector([x, y, z]))
+const moveTo = (x: number, y: number, z: number = 1) => (
+  new MCommand(v3D(x, y, z))
 );
 
 /** Returns true if the given command is an MCommand. */
@@ -4086,15 +4186,15 @@ const isMCommand = (command: PathCommand): command is MCommand => (
 
 /** An object corresponding to a lineto command. */
 class ZCommand extends PathCommand {
-  constructor(end: RealVector) {
+  constructor(end: Vector3D) {
     super(end, PathCommandType.Z);
   }
   toString(): string {
     return `Z`;
   }
 }
-const zCommand = (endX: number, endY: number, endZ: number = 0) => (
-  new ZCommand(rvector([endX, endY, endZ]))
+const zCommand = (endX: number, endY: number, endZ: number = 1) => (
+  new ZCommand(v3D(endX, endY, endZ))
 );
 
 /** Returns true if the given command is a ZCommand.  */
@@ -4104,17 +4204,17 @@ const isZCommand = (command: PathCommand): command is ZCommand => (
 
 /** An object corresponding to a lineto command. */
 class LCommand extends PathCommand {
-  constructor(end: RealVector) {
+  constructor(end: Vector3D) {
     super(end, PathCommandType.L);
   }
   toString(): string {
-    return `${this.$relative ? "l" : "L"}${this.$end.x} ${this.$end.y}`;
+    return `${this.$relative ? "l" : "L"}${this.$end.$x} ${this.$end.$y}`;
   }
 }
 
 /** Returns a lineto command. */
-const lineTo = (x: number, y: number, z: number = 0) => (
-  new LCommand(rvector([x, y, z]))
+const lineTo = (x: number, y: number, z: number = 1) => (
+  new LCommand(v3D(x, y, z))
 );
 
 const isLCommand = (command: PathCommand): command is LCommand => (
@@ -4129,7 +4229,7 @@ class ACommand extends PathCommand {
     xAxisRotation: number,
     largeArc: 0 | 1,
     sweep: 0 | 1,
-    end: RealVector,
+    end: Vector3D,
   ) {
     super(end, PathCommandType.A);
     this.$rx = rx;
@@ -4188,7 +4288,7 @@ class ACommand extends PathCommand {
   toString(): string {
     return `${
       this.$relative ? "a" : "A"
-    }${this.$rx},${this.$ry} ${this.$xAxisRotation}  ${this.$largeArc} ${this.$sweep} ${this.$end.x},${this.$end.y}`;
+    }${this.$rx},${this.$ry} ${this.$xAxisRotation}  ${this.$largeArc} ${this.$sweep} ${this.$end.$x},${this.$end.$y}`;
   }
 }
 
@@ -4207,9 +4307,7 @@ const arcTo = (
     xAxisRotation,
     largeArc,
     sweep,
-    rvector(
-      end.length === 2 ? [end[0], end[1], 0] : end,
-    ),
+    v3D(end[0], end[1], end[2] === undefined ? 1 : end[2]),
   )
 );
 
@@ -4220,15 +4318,15 @@ const isACommand = (command: PathCommand): command is ACommand => (
 
 /** An object corresponding to a quadratic Bezier curve command. */
 class QCommand extends PathCommand {
-  $control: RealVector;
-  constructor(control: RealVector, end: RealVector) {
+  $control: Vector3D;
+  constructor(control: Vector3D, end: Vector3D) {
     super(end, PathCommandType.Q);
     this.$control = control;
   }
   toString(): string {
     return `${
       this.$relative ? "q" : "Q"
-    }${this.$control.x},${this.$control.y} ${this.$end.x},${this.$end.y}`;
+    }${this.$control.$x},${this.$control.$y} ${this.$end.$x},${this.$end.$y}`;
   }
 }
 
@@ -4238,12 +4336,8 @@ const qbcTo = (
   end: [number, number] | [number, number, number],
 ) => (
   new QCommand(
-    rvector(
-      control.length === 2 ? [control[0], control[1], 0] : control,
-    ),
-    rvector(
-      end.length === 2 ? [end[0], end[1], 0] : end,
-    ),
+    v3D(control[0], control[1], control[2] === undefined ? 1 : control[2]),
+    v3D(end[0], end[1], end[2] === undefined ? 1 : end[2]),
   )
 );
 
@@ -4254,9 +4348,9 @@ const isQCommand = (command: PathCommand): command is QCommand => (
 
 /** An object corresponding to a cubic Bezier curve command. */
 class CCommand extends PathCommand {
-  $control1: RealVector;
-  $control2: RealVector;
-  constructor(control1: RealVector, control2: RealVector, end: RealVector) {
+  $control1: Vector3D;
+  $control2: Vector3D;
+  constructor(control1: Vector3D, control2: Vector3D, end: Vector3D) {
     super(end, PathCommandType.C);
     this.$control1 = control1;
     this.$control2 = control2;
@@ -4264,7 +4358,7 @@ class CCommand extends PathCommand {
   toString(): string {
     return `${
       this.$relative ? "c" : "C"
-    }${this.$control1.x},${this.$control1.y} ${this.$control2.x} ${this.$control2.y} ${this.$end.x},${this.$end.y}`;
+    }${this.$control1.$x},${this.$control1.$y} ${this.$control2.$x} ${this.$control2.$y} ${this.$end.$x},${this.$end.$y}`;
   }
 }
 
@@ -4275,15 +4369,9 @@ const cbcTo = (
   end: [number, number] | [number, number, number],
 ) => (
   new CCommand(
-    rvector(
-      control1.length === 2 ? [control1[0], control1[1], 0] : control1,
-    ),
-    rvector(
-      control2.length === 2 ? [control2[0], control2[1], 0] : control2,
-    ),
-    rvector(
-      end.length === 2 ? [end[0], end[1], 0] : end,
-    ),
+    v3D(control1[0], control1[1], control1[2] === undefined ? 1 : control1[2]),
+    v3D(control2[0], control2[1], control2[2] === undefined ? 1 : control2[2]),
+    v3D(end[0], end[1], end[2] === undefined ? 1 : end[2]),
   )
 );
 
@@ -4613,29 +4701,29 @@ class Path extends Renderable {
     const yscale = range(yDomain, parentYDomain);
     const zscale = range(zDomain, parentZDomain);
     this.$commands.forEach((command) => {
-      command.$end = rvector([
-        xscale(command.$end.x),
-        yscale(command.$end.y),
-        zscale(command.$end.z),
-      ]);
+      command.$end = v3D(
+        xscale(command.$end.$x),
+        yscale(command.$end.$y),
+        zscale(command.$end.$z),
+      );
       if (isQCommand(command)) {
-        command.$control = rvector([
-          xscale(command.$control.x),
-          yscale(command.$control.y),
-          zscale(command.$control.z),
-        ]);
+        command.$control = v3D(
+          xscale(command.$control.$x),
+          yscale(command.$control.$y),
+          zscale(command.$control.$z),
+        );
       }
       if (isCCommand(command)) {
-        command.$control1 = rvector([
-          xscale(command.$control1.x),
-          yscale(command.$control1.y),
-          zscale(command.$control1.z),
-        ]);
-        command.$control2 = rvector([
-          xscale(command.$control2.x),
-          yscale(command.$control2.y),
-          zscale(command.$control2.z),
-        ]);
+        command.$control1 = v3D(
+          xscale(command.$control1.$x),
+          yscale(command.$control1.$y),
+          zscale(command.$control1.$z),
+        );
+        command.$control2 = v3D(
+          xscale(command.$control2.$x),
+          yscale(command.$control2.$y),
+          zscale(command.$control2.$z),
+        );
       }
     });
     return this;
@@ -4644,12 +4732,12 @@ class Path extends Renderable {
   $commands: PathCommand[] = [];
 
   /** The current position of the path’s cursor. */
-  $cursor: RealVector;
+  $cursor: Vector3D;
 
   constructor(startX: number, startY: number, startZ: number = 1) {
     super(RENDERABLE_TYPE.RAW_PATH);
     this.$commands = [moveTo(startX, startY, startZ)];
-    this.$cursor = rvector([startX, startY, startZ]);
+    this.$cursor = v3D(startX, startY, startZ);
   }
 
   /**
@@ -4658,7 +4746,7 @@ class Path extends Renderable {
    */
   Z() {
     this.$commands.push(
-      zCommand(this.$cursor.x, this.$cursor.y, this.$cursor.z),
+      zCommand(this.$cursor.$x, this.$cursor.$y, this.$cursor.$z),
     );
     return this;
   }
@@ -4676,36 +4764,36 @@ class Path extends Renderable {
   /** Appends to this path’s command list an absolute moveto command. */
   M(x: number, y: number, z: number = 1) {
     this.$commands.push(moveTo(x, y, z));
-    this.$cursor = rvector([x, y, z]);
+    this.$cursor = v3D(x, y, z);
     return this;
   }
 
   /** Appends to this path’s command list a relative moveto command. */
   m(x: number, y: number, z: number = 1) {
     this.$commands.push(moveTo(x, y, z).asRelative());
-    this.$cursor = rvector([
-      this.$cursor.x + x,
-      this.$cursor.y + y,
-      this.$cursor.z + z,
-    ]);
+    this.$cursor = v3D(
+      this.$cursor.$x + x,
+      this.$cursor.$y + y,
+      this.$cursor.$z + z,
+    );
     return this;
   }
 
   /** Appends to this path’s command list an absolute lineto command. */
   L(x: number, y: number, z: number = 1) {
     this.$commands.push(lineTo(x, y, z));
-    this.$cursor = rvector([x, y, z]);
+    this.$cursor = v3D(x, y, z);
     return this;
   }
 
   /** Appends to this path’s command list a relative lineto command. */
   l(x: number, y: number, z: number = 1) {
     this.$commands.push(lineTo(x, y, z).asRelative());
-    this.$cursor = rvector([
-      this.$cursor.x + x,
-      this.$cursor.y + y,
-      this.$cursor.z + z,
-    ]);
+    this.$cursor = v3D(
+      this.$cursor.$x + x,
+      this.$cursor.$y + y,
+      this.$cursor.$z + z,
+    );
     return this;
   }
 
@@ -4720,11 +4808,11 @@ class Path extends Renderable {
   ) {
     const a = arcTo(rx, ry, xAxisRotation, largeArc, sweep, end);
     this.$commands.push(a);
-    this.$cursor = rvector([
-      a.$end.x,
-      a.$end.y,
-      a.$end.z,
-    ]);
+    this.$cursor = v3D(
+      a.$end.$x,
+      a.$end.$y,
+      a.$end.$z,
+    );
     return this;
   }
 
@@ -4739,11 +4827,11 @@ class Path extends Renderable {
   ) {
     const a = arcTo(rx, ry, xAxisRotation, largeArc, sweep, end);
     this.$commands.push(a.asRelative());
-    this.$cursor = rvector([
-      this.$cursor.x + a.$end.x,
-      this.$cursor.y + a.$end.y,
-      this.$cursor.z + a.$end.z,
-    ]);
+    this.$cursor = v3D(
+      this.$cursor.$x + a.$end.$x,
+      this.$cursor.$y + a.$end.$y,
+      this.$cursor.$z + a.$end.$z,
+    );
     return this;
   }
 
@@ -4757,11 +4845,11 @@ class Path extends Renderable {
   ) {
     const q = qbcTo(control, end);
     this.$commands.push(q);
-    this.$cursor = rvector([
-      q.$end.x,
-      q.$end.y,
-      q.$end.z,
-    ]);
+    this.$cursor = v3D(
+      q.$end.$x,
+      q.$end.$y,
+      q.$end.$z,
+    );
     return this;
   }
 
@@ -4775,11 +4863,11 @@ class Path extends Renderable {
   ) {
     const q = qbcTo(control, end);
     this.$commands.push(q.asRelative());
-    this.$cursor = rvector([
-      this.$cursor.x + q.$end.x,
-      this.$cursor.y + q.$end.y,
-      this.$cursor.z + q.$end.z,
-    ]);
+    this.$cursor = v3D(
+      this.$cursor.$x + q.$end.$x,
+      this.$cursor.$y + q.$end.$y,
+      this.$cursor.$z + q.$end.$z,
+    );
     return this;
   }
 
@@ -4794,11 +4882,7 @@ class Path extends Renderable {
   ) {
     const c = cbcTo(control1, control2, end);
     this.$commands.push(c);
-    this.$cursor = rvector([
-      c.$end.x,
-      c.$end.y,
-      c.$end.z,
-    ]);
+    this.$cursor = v3D(c.$end.$x, c.$end.$y, c.$end.$z);
     return this;
   }
 
@@ -4813,11 +4897,11 @@ class Path extends Renderable {
   ) {
     const c = cbcTo(control1, control2, end);
     this.$commands.push(c.asRelative());
-    this.$cursor = rvector([
-      this.$cursor.x + c.$end.x,
-      this.$cursor.y + c.$end.y,
-      this.$cursor.z + c.$end.z,
-    ]);
+    this.$cursor = v3D(
+      this.$cursor.$x + c.$end.$x,
+      this.$cursor.$y + c.$end.$y,
+      this.$cursor.$z + c.$end.$z,
+    );
     return this;
   }
 }
@@ -5002,7 +5086,7 @@ class Plot2D {
         }
       }
     }
-    const p = path(out[0].$end.x, out[0].$end.y, out[0].$end.z);
+    const p = path(out[0].$end.$x, out[0].$end.$y, out[0].$end.$z);
     for (let i = 1; i < out.length; i++) {
       p.$commands.push(out[i]);
     }

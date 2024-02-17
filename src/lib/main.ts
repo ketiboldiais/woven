@@ -150,100 +150,7 @@ const gcd = (a: number, b: number) => {
   return abs(A);
 };
 
-/** An object corresponding to a graph vertex. */
-class Vertex {
-  /** The unique ID of this vertex. */
-  $id: string;
 
-  /** This vertex’s label. */
-  $label?: string;
-
-  constructor(id: string, label?: string) {
-    this.$id = id;
-    this.$label = label;
-  }
-
-  /** Sets the unique ID of this vertex. */
-  id(value: string) {
-    this.$id = value;
-    return this;
-  }
-
-  /** Labels this vertex with the given value. */
-  label(value: string) {
-    this.$label = value;
-    return this;
-  }
-}
-
-/**
- * Returns a new Vertex.
- */
-const vertex = (id: string, label?: string) => (
-  new Vertex(id, label)
-);
-
-type EdgeType = "->" | "--";
-
-/** An object corresponding to a graph edge. */
-class Edge {
-  $source: Vertex;
-  $target: Vertex;
-  $type: EdgeType;
-  constructor(source: Vertex, target: Vertex, type: EdgeType) {
-    this.$source = source;
-    this.$target = target;
-    this.$type = type;
-  }
-  get $id() {
-    return `${this.$source.$id}${this.$type}${this.$target.$id}`;
-  }
-}
-
-/**
- * Returns a new graph Edge.
- * @param source - The source of the edge.
- * @param edgeType - one of:
- *   1. `"->""` corresponding to a directed edge.
- *   2. `"--""` corresponding to a simple edge.
- * @param target - The target of the edge.
- */
-const edge = (
-  source: Vertex,
-  edgeType: "->" | "--",
-  target: Vertex,
-) => (
-  new Edge(source, target, edgeType)
-);
-
-/** An object corresponding to a graph. */
-class SimpleGraph {
-  /** The adjacency list comprising this graph. */
-  $adjacency: Record<string, Vertex[]> = {};
-
-  /** The set of vertices comprising this graph. */
-  $vertices: Record<string, Vertex> = {};
-
-  /** The number of vertices comprising this graph. */
-  $order: number = 0;
-
-  /** The number of edges comprising this graph. */
-  $size: number = 0;
-
-  constructor() {}
-
-  hasVertex(id: string) {
-    return this.$vertices[id] !== undefined;
-  }
-
-  addVertex(id: string, label?: string) {
-    if (!this.hasVertex(id)) {
-      this.$vertices[id] = vertex(id, label);
-      this.$order++;
-    }
-    return this;
-  }
-}
 
 // § Tree Printer ==============================================================
 /**
@@ -4937,6 +4844,10 @@ export const line2D = (start: [number, number], end: [number, number]) => (
   path(start[0], start[1]).L(end[0], end[1])
 );
 
+abstract class Composite {
+  abstract path(): Renderable;
+}
+
 class Grid2D {
 }
 
@@ -4961,7 +4872,7 @@ export const grid2D = (
   return group(elements);
 };
 
-class Circle {
+class Circle extends Composite {
   $radius: number = 1;
   r(radius: number) {
     this.$radius = radius;
@@ -4982,6 +4893,7 @@ class Circle {
     return this.$position[2];
   }
   constructor(positionX: number, positionY: number, positionZ: number = 1) {
+    super();
     this.$position = [positionX, positionY, positionZ];
   }
   path() {
@@ -5005,7 +4917,8 @@ export const circle = (x: number, y: number, z: number = 1) => (
   new Circle(x, y, z)
 );
 
-class Plot2D {
+/** An object corresponding to a 2D function plot. */
+class Plot2D extends Composite {
   $f: string;
   /** The number of samples this Plot2D takes to plot this function. */
   $samples: number = 800;
@@ -5039,6 +4952,7 @@ class Plot2D {
   }
 
   constructor(f: string, domain: [number, number], range: [number, number]) {
+    super();
     this.$f = f;
     this.$domain = domain;
     this.$range = range;

@@ -69,14 +69,14 @@ const Text = ({ of }: { of: RenderableText }) => (
 );
 
 const Sketch = () => {
-  const xdomain = tuple(-2, 10);
-  const ydomain = tuple(-2, 10);
+  const xdomain = tuple(-5, 5);
+  const ydomain = tuple(-5, 5);
   const gridIncrement = 1;
   const cs = coord(xdomain, ydomain);
   const xAxis = line2D([-10, 0], [10, 0]);
   const yAxis = line2D([0, -10], [0, 10]);
   const axes = group([xAxis, yAxis]).stroke('grey').strokeWidth(0.5);
-  const curve = plot2D(`f(x) = ln(x)`, xdomain, ydomain);
+  const curve = plot2D(`f(x) = sin(x)`, xdomain, ydomain);
   const txt = text('(3,3)').at(3, 3).fontSize('8px').textAnchor('middle');
   const elements = group([
     axes,
@@ -85,7 +85,7 @@ const Sketch = () => {
     circle(3, 3).r(0.1).path().fill('slategrey'),
     txt,
   ]).coordinateSystem(cs);
-  const s = svg(250,250).children([elements]).done();
+  const s = svg(250, 250).children([elements]).done();
 
   return (
     <svg viewBox={s.$viewBox} preserveAspectRatio={s.$preserveAspectRatio}>

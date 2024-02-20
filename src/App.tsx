@@ -2,6 +2,7 @@ import './App.css';
 import Overview from './pages/overview.mdx';
 import Compiler from './pages/compiler.mdx';
 import Tokenizer from './pages/tokenizer.mdx';
+import FunctionPlot2D from './pages/function-plot-2d.mdx';
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom';
 
 type LinkObject = {
@@ -16,6 +17,7 @@ type LinkObject = {
 const links: LinkObject[] = [
   { text: 'Overview', path: '/', page: <Overview /> },
   { text: 'Compiler', path: '/compiler', page: <Compiler /> },
+  { text: '2D Function Plot', path: '/function-plot-2d', page: <FunctionPlot2D /> },
   { text: 'Tokenizer', path: '/tokenizer', page: <Tokenizer /> },
 ];
 
@@ -34,10 +36,10 @@ const Nav = () => (
 function App() {
   return (
     <BrowserRouter>
-      <Nav/>
+      <Nav />
       <main>
         <Routes>
-          <Route path={'/'} element={<Overview/>} />
+          <Route path={'/'} element={<Overview />} />
           {links.map((link) => (
             <Route path={link.path} key={link.path} element={link.page} />
           ))}

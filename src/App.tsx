@@ -35,7 +35,6 @@ function App() {
   return (
     <BrowserRouter>
       <main>
-        <h1>Woven</h1>
         <Nav/>
         <Routes>
           {links.map((link) => (

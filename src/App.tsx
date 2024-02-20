@@ -14,7 +14,7 @@ type LinkObject = {
 };
 
 const links: LinkObject[] = [
-  { text: 'Overview', path: '/overview', page: <Overview /> },
+  { text: 'Overview', path: '/', page: <Overview /> },
   { text: 'Compiler', path: '/compiler', page: <Compiler /> },
   { text: 'Tokenizer', path: '/tokenizer', page: <Tokenizer /> },
 ];
@@ -37,6 +37,7 @@ function App() {
       <Nav/>
       <main>
         <Routes>
+          <Route path={'/'} element={<Overview/>} />
           {links.map((link) => (
             <Route path={link.path} key={link.path} element={link.page} />
           ))}

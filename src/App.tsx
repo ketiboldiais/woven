@@ -34,8 +34,8 @@ const Nav = () => (
 function App() {
   return (
     <BrowserRouter>
+      <Nav/>
       <main>
-        <Nav/>
         <Routes>
           {links.map((link) => (
             <Route path={link.path} key={link.path} element={link.page} />

@@ -19,18 +19,24 @@ const links: LinkObject[] = [
   { text: 'Tokenizer', path: '/tokenizer', page: <Tokenizer /> },
 ];
 
+const Nav = () => (
+  <nav>
+    <ul>
+      {links.map((link) => (
+        <li key={link.path}>
+          <Link to={link.path}>{link.text}</Link>
+        </li>
+      ))}
+    </ul>
+  </nav>
+);
+
 function App() {
   return (
     <BrowserRouter>
       <main>
         <h1>Woven</h1>
-        <ul>
-          {links.map((link) => (
-            <li key={link.path}>
-              <Link to={link.path}>{link.text}</Link>
-            </li>
-          ))}
-        </ul>
+        <Nav/>
         <Routes>
           {links.map((link) => (
             <Route path={link.path} key={link.path} element={link.page} />

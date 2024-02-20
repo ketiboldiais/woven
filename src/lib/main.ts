@@ -150,7 +150,9 @@ const gcd = (a: number, b: number) => {
   return abs(A);
 };
 
-
+class Binode {
+  
+}
 
 // § Tree Printer ==============================================================
 /**

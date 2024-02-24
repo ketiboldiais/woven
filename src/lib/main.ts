@@ -2083,7 +2083,7 @@ export function lexicalAnalysis(code: string) {
             `scanning a fraction`,
           );
         } else {
-          return newToken(type).literal(rat(numerator, denominator));
+          return newToken(type).literal(frac(numerator, denominator));
         }
       }
       default:
@@ -2434,7 +2434,7 @@ class Fraction {
 }
 
 /** Returns a new rational. */
-const rat = (numerator: number, denominator: number) => (
+const frac = (numerator: number, denominator: number) => (
   new Fraction(numerator, denominator)
 );
 const isFrac = (x: any): x is Fraction => (

@@ -1,3 +1,5 @@
+import { Either, isDigit, isLatinGreek, left, right } from "./aux";
+
 const show = console.log;
 
 enum TAG {
@@ -117,11 +119,6 @@ class SetX {
 const set = (...data: (string | number)[]) => (
   new SetX(data)
 );
-
-const a = set(1, 2, 3, 4);
-const b = set(4, 1, 2);
-const c = a.symmetricDifference(b);
-show(c);
 
 abstract class Evaluator {
   kind: TAG;
@@ -900,11 +897,178 @@ const subexOf = (u: Expression) => {
 // deno-fmt-ignore
 enum TokenType {
   left_paren, right_paren, left_brace, right_brace, left_bracket, right_bracket,
-  comma, dot, minus, plus, colon, colon_equal, semicolon,
-  slash, star, bang, bang_equal, equal, greater_equal,
-  less, less_equal, identifier, string, number, and,
-  class, else, false, fn, for, if, nil, or,
-  print, return, super, this, true, var, while
+  comma, dot, minus, caret, plus, colon, colon_equal, semicolon,
+  slash, star, bang, bang_equal, equal, equal_equal, greater, greater_equal,
+  less, less_equal, identifier, string, int, float, 
+	EOF,
 }
 
+class ERROR extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
 
+const error = (message: string) => (
+  new ERROR(message)
+);
+
+class Token {
+  type: TokenType;
+  lexeme: string;
+  constructor(type: TokenType, lexeme: string) {
+    this.type = type;
+    this.lexeme = lexeme;
+  }
+}
+
+const token = (type: TokenType, lexeme: string) => (
+  new Token(type, lexeme)
+);
+
+const lexemesOf = (code: string) => {
+  const keywords: Record<string, TokenType> = {};
+  let $source = code;
+  let $tokens: Token[] = [];
+  let $start = 0;
+  let $current = 0;
+  let $error: null | ERROR = null;
+  const atEnd = () => $current >= $source.length;
+  const advance = () => $source.charAt($current++);
+  const peek = () => {
+    if (atEnd()) return "";
+    return $source.charAt($current);
+  };
+  const peekNext = () => {
+    if ($current + 1 >= $source.length) {
+      return "";
+    }
+    return $source.charAt($current + 1);
+  };
+  const match = (expectedChar: string) => {
+    if (atEnd()) return false;
+    if ($source.charAt($current) !== expectedChar) return false;
+    $current++;
+    return true;
+  };
+  const addToken = (type: TokenType) => {
+    const text = $source.substring($start, $current);
+    $tokens.push(token(type, text));
+  };
+
+  const identifier = () => {
+    while (isLatinGreek(peek())) {
+      advance();
+    }
+    const text = $source.substring($start, $current);
+    let type = TokenType.identifier;
+    if (keywords[text]) {
+      type = keywords[text];
+    }
+    addToken(type);
+  };
+
+  const number = () => {
+    let type: TokenType.int | TokenType.float = TokenType.int;
+    while (isDigit(peek())) {
+      advance();
+    }
+    if (peek() === "." && isDigit(peekNext())) {
+      advance();
+      type = TokenType.float;
+      while (isDigit(peek())) {
+        advance();
+      }
+    }
+    addToken(type);
+  };
+
+  const scanToken = () => {
+    const char = advance();
+    switch (char) {
+      case "(":
+        addToken(TokenType.left_paren);
+        break;
+      case ")":
+        addToken(TokenType.right_paren);
+        break;
+      case "{":
+        addToken(TokenType.left_brace);
+        break;
+      case "}":
+        addToken(TokenType.right_brace);
+        break;
+      case "^":
+        addToken(TokenType.caret);
+        break;
+      case ",":
+        addToken(TokenType.comma);
+        break;
+      case ".":
+        addToken(TokenType.dot);
+        break;
+      case "-":
+        addToken(TokenType.minus);
+        break;
+      case "+":
+        addToken(TokenType.plus);
+        break;
+			case '/':
+				addToken(TokenType.slash);
+				break;
+      case ";":
+        addToken(TokenType.semicolon);
+        break;
+      case "*":
+        addToken(TokenType.star);
+        break;
+      case "!":
+        addToken(match("=") ? TokenType.bang_equal : TokenType.bang);
+        break;
+      case "=":
+        addToken(match("=") ? TokenType.equal_equal : TokenType.equal);
+        break;
+      case "<":
+        addToken(match("=") ? TokenType.less_equal : TokenType.less);
+        break;
+      case ">":
+        addToken(match("=") ? TokenType.greater_equal : TokenType.greater);
+        break;
+      case " ":
+      case "\r":
+      case "\t":
+      case "\n":
+        break;
+      default:
+        if (isDigit(char)) {
+          number();
+        } else if (isLatinGreek(char)) {
+          identifier();
+        } else {
+          $error = error(`Unknown token: “${char}”`);
+        }
+        break;
+    }
+  };
+  const scanTokens = () => {
+    while (!atEnd()) {
+      $start = $current;
+      scanToken();
+      if ($error) {
+        return left($error);
+      }
+    }
+    $tokens.push(token(TokenType.EOF, "EOF"));
+    return right($tokens);
+  };
+  return scanTokens();
+};
+
+type Parselet<T> = (token: Token, lastnode: T) => Either<ERROR, T>;
+
+const syntax = (code:string) => {
+
+}
+
+const j = lexemesOf("1/(x^2 - 1)");
+show(j);

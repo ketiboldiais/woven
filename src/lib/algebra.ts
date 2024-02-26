@@ -1,4 +1,13 @@
-import { Either, isDigit, isLatinGreek, left, right } from "./aux";
+import {
+  BP,
+  Either,
+  isDigit,
+  isLatinGreek,
+  left,
+  Right,
+  right,
+  treed,
+} from "./aux";
 
 const show = console.log;
 
@@ -21,6 +30,7 @@ enum TAG {
 const isNumber = (x: any): x is number => (
   typeof x === "number"
 );
+
 const id = <T>(x: T) => x;
 
 class SetX {
@@ -116,7 +126,7 @@ class SetX {
   }
 }
 
-const set = (...data: (string | number)[]) => (
+const set = (data: (string | number)[]) => (
   new SetX(data)
 );
 
@@ -151,15 +161,13 @@ interface ExpressionVisitor<T> {
 }
 
 abstract class Statement extends Evaluator {}
+
 abstract class Expression extends Evaluator {
-  parenLevel: number = 0;
-  tickParen() {
-    this.parenLevel += 1;
-    return this;
-  }
   abstract acceptExprVisitor<T>(visitor: ExpressionVisitor<T>): T;
 }
+
 type LogicalOperator = "not" | "and" | "or";
+
 abstract class BooleanExpression extends Expression {
   operator: LogicalOperator;
   operands: [Expression] | [Expression, Expression];
@@ -187,6 +195,7 @@ class NotExpression extends BooleanExpression implements Compound {
     return this.operands[0];
   }
 }
+
 const lnot = (arg: Expression) => (
   new NotExpression(arg)
 );
@@ -202,6 +211,7 @@ class AndExpression extends BooleanExpression implements Compound {
     this.operands = [left, right];
   }
 }
+
 const land = (a: Expression, b: Expression) => (
   new AndExpression(a, b)
 );
@@ -217,11 +227,13 @@ class OrExpression extends BooleanExpression implements Compound {
     this.operands = [left, right];
   }
 }
+
 const lor = (a: Expression, b: Expression) => (
   new OrExpression(a, b)
 );
 
 abstract class SetExpression extends Expression {}
+
 abstract class NameForming extends Expression {}
 
 type RELATION_OPERATOR = "<=" | ">=" | "<" | ">" | "=" | "!=";
@@ -282,6 +294,7 @@ class GreaterThan extends RelationalExpression {
     this.operands = [left, right];
   }
 }
+
 const gt = (a: AlgebraicExpression, b: AlgebraicExpression) => (
   new GreaterThan(a, b)
 );
@@ -298,6 +311,7 @@ class GreaterThanOrEqualTo extends RelationalExpression {
     this.operands = [left, right];
   }
 }
+
 const geq = (a: AlgebraicExpression, b: AlgebraicExpression) => (
   new GreaterThanOrEqualTo(a, b)
 );
@@ -314,6 +328,7 @@ class Equation extends RelationalExpression {
     this.operands = [left, right];
   }
 }
+
 const eq = (a: Expression, b: Expression) => (
   new Equation(a, b)
 );
@@ -330,11 +345,16 @@ class NonEquation extends RelationalExpression {
     this.operands = [left, right];
   }
 }
+
 const neq = (a: Expression, b: Expression) => (
   new NonEquation(a, b)
 );
 
 abstract class AlgebraicExpression extends Expression {}
+
+const isAlgebraic = (u: Expression): u is AlgebraicExpression => (
+  u instanceof AlgebraicExpression
+);
 
 class Int extends AlgebraicExpression {
   value: number;
@@ -346,7 +366,12 @@ class Int extends AlgebraicExpression {
     return visitor.int(this);
   }
 }
+
 const int = (value: number) => (new Int(value));
+
+const isInt = (u: Expression): u is Int => (
+  u.kind === TAG.INT
+);
 
 class Real extends AlgebraicExpression {
   value: number;
@@ -358,7 +383,12 @@ class Real extends AlgebraicExpression {
     return visitor.real(this);
   }
 }
+
 const real = (value: number) => new Real(value);
+
+const isReal = (u: Expression): u is Real => (
+  u.kind === TAG.REAL
+);
 
 class Sym extends AlgebraicExpression {
   value: string;
@@ -370,7 +400,12 @@ class Sym extends AlgebraicExpression {
     return visitor.sym(this);
   }
 }
+
 const sym = (value: string) => (new Sym(value));
+
+const isSym = (u: Expression): u is Sym => (
+  u.kind === TAG.SYM
+);
 
 class Constant extends AlgebraicExpression {
   value: string;
@@ -382,8 +417,18 @@ class Constant extends AlgebraicExpression {
     return visitor.constant(this);
   }
 }
+
 const constant = (value: string) => (new Constant(value));
+
 const Undefined = constant("Undefined");
+
+const isConstant = (u: Expression): u is Constant => (
+  u.kind === TAG.CONSTANT
+);
+
+const isUndefined = (u: Expression) => (
+  isConstant(u) && u.value === "Undefined"
+);
 
 interface Compound {
   operator: string;
@@ -416,6 +461,10 @@ const rat = (numerator: number | Int, denominator: number | Int) => (
   )
 );
 
+const isRational = (u: Expression): u is Rational => (
+  u.kind === TAG.RATIONAL
+);
+
 class Sum extends AlgebraicExpression implements Compound {
   operator: "+" = "+";
   operands: AlgebraicExpression[];
@@ -427,8 +476,13 @@ class Sum extends AlgebraicExpression implements Compound {
     return visitor.sum(this);
   }
 }
-const sum = (...operands: AlgebraicExpression[]) => (
+
+const sum = (operands: AlgebraicExpression[]) => (
   new Sum(operands)
+);
+
+const isSum = (u: Expression): u is Sum => (
+  u.kind === TAG.SUM
 );
 
 class Product extends AlgebraicExpression implements Compound {
@@ -442,14 +496,21 @@ class Product extends AlgebraicExpression implements Compound {
     return visitor.product(this);
   }
 }
-const product = (...operands: AlgebraicExpression[]) => (
+
+const product = (operands: AlgebraicExpression[]) => (
   new Product(operands)
 );
-const negation = (operand: AlgebraicExpression) => (
-  product(int(-1), operand)
+
+const isProduct = (u: Expression): u is Product => (
+  u.kind === TAG.PRODUCT
 );
+
+const negation = (operand: AlgebraicExpression) => (
+  product([int(-1), operand])
+);
+
 const difference = (left: AlgebraicExpression, right: AlgebraicExpression) => (
-  sum(left, negation(right))
+  sum([left, negation(right)])
 );
 
 class Power extends AlgebraicExpression implements Compound {
@@ -469,8 +530,13 @@ class Power extends AlgebraicExpression implements Compound {
     return visitor.power(this);
   }
 }
+
 const power = (base: AlgebraicExpression, exponent: AlgebraicExpression) => (
   new Power(base, exponent)
+);
+
+const isPower = (u: Expression): u is Power => (
+  u.kind === TAG.POWER
 );
 
 class Quotient extends AlgebraicExpression implements Compound {
@@ -496,6 +562,9 @@ const quotient = (
 ) => (
   new Quotient(dividend, divisor)
 );
+const isQuotient = (u: Expression): u is Quotient => (
+  u.kind === TAG.QUOTIENT
+);
 
 class Factorial extends AlgebraicExpression implements Compound {
   operator: "!" = "!";
@@ -511,8 +580,13 @@ class Factorial extends AlgebraicExpression implements Compound {
     return visitor.factorial(this);
   }
 }
+
 const factorial = (operand: AlgebraicExpression) => (
   new Factorial(operand)
+);
+
+const isFactorial = (u: Expression): u is Factorial => (
+  u.kind === TAG.FACTORIAL
 );
 
 class FunctionForm extends AlgebraicExpression implements Compound {
@@ -530,6 +604,10 @@ class FunctionForm extends AlgebraicExpression implements Compound {
 
 const fun = (operator: string, args: AlgebraicExpression[]) => (
   new FunctionForm(operator, args)
+);
+
+const isFunctionForm = (u: Expression): u is FunctionForm => (
+  u.kind === TAG.FUNCTION_FORM
 );
 
 class IsCompound implements ExpressionVisitor<boolean> {
@@ -594,7 +672,9 @@ class IsCompound implements ExpressionVisitor<boolean> {
     return true;
   }
 }
+
 const IS_COMPOUND = new IsCompound();
+
 const isCompound = (expr: Expression) => (
   expr.acceptExprVisitor(IS_COMPOUND)
 );
@@ -604,22 +684,22 @@ class ToString implements ExpressionVisitor<string> {
     return expr.acceptExprVisitor(this);
   }
   int(expr: Int): string {
-    return (expr.parenLevel) ? `(${expr.value})` : `${expr.value}`;
+    return `${expr.value}`;
   }
   real(expr: Real): string {
-    return (expr.parenLevel) ? `(${expr.value})` : `${expr.value}`;
+    return `${expr.value}`;
   }
   sym(expr: Sym): string {
-    return (expr.parenLevel) ? `(${expr.value})` : `${expr.value}`;
+    return `${expr.value}`;
   }
   rat(expr: Rational): string {
     const A = `${expr.numerator.value}`;
     const B = `${expr.denominator.value}`;
     const out = `${A}/${B}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   constant(expr: Constant): string {
-    return (expr.parenLevel) ? `(${expr.value})` : `${expr.value}`;
+    return `${expr.value}`;
   }
   private stringifyList(separator: string, args: Expression[]) {
     let out = "";
@@ -633,92 +713,118 @@ class ToString implements ExpressionVisitor<string> {
     return out;
   }
   sum(expr: Sum): string {
-    const out = this.stringifyList("+", expr.operands);
-    return expr.parenLevel ? `(${out})` : out;
+    const args = expr.operands;
+    const summands: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const operand = this.stringify(args[i]);
+      summands.push(operand);
+    }
+    const out = summands.join("+").replaceAll("+-", "-");
+    return out;
   }
   product(expr: Product): string {
+    if (expr.operands.length === 2) {
+      const lhs = expr.operands[0];
+      const rhs = expr.operands[1];
+      if (isInt(lhs) && lhs.value === -1) {
+        return `-${stringify(rhs)}`;
+      }
+      if (
+        (isInt(lhs) && isSym(rhs)) ||
+        (isReal(lhs) && isSym(rhs)) ||
+        (isInt(lhs) && isFunctionForm(rhs)) ||
+        (isReal(lhs) && isFunctionForm(rhs)) ||
+        (isInt(lhs) &&
+          (isPower(rhs) && (isSym(rhs.base) || isFunctionForm(rhs.base)))) ||
+        (isReal(lhs) &&
+          (isPower(rhs) && (isSym(rhs.base) || isFunctionForm(rhs.base))))
+      ) {
+        return `${stringify(lhs)}${stringify(rhs)}`;
+      }
+    }
     const out = this.stringifyList("*", expr.operands);
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   power(expr: Power): string {
     const base = this.stringify(expr.base);
     const exponent = this.stringify(expr.exponent);
     const out = `${base}^${exponent}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   quotient(expr: Quotient): string {
     const dividend = this.stringify(expr.dividend);
     const divisor = this.stringify(expr.divisor);
     const out = `${dividend}/${divisor}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   factorial(expr: Factorial): string {
     const arg = this.stringify(expr.arg);
     const out = `${arg}!`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   functionForm(expr: FunctionForm): string {
     const name = expr.operator;
     const args = this.stringifyList(",", expr.operands);
     const out = `${name}(${args})`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   lessThan(expr: LessThan): string {
     const left = this.stringify(expr.operands[0]);
     const right = this.stringify(expr.operands[1]);
     const out = `${left} < ${right}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   greaterThan(expr: GreaterThan): string {
     const left = this.stringify(expr.operands[0]);
     const right = this.stringify(expr.operands[1]);
     const out = `${left} > ${right}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   equation(expr: Equation): string {
     const left = this.stringify(expr.operands[0]);
     const right = this.stringify(expr.operands[1]);
     const out = `${left} = ${right}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   nonEquation(expr: NonEquation): string {
     const left = this.stringify(expr.operands[0]);
     const right = this.stringify(expr.operands[1]);
     const out = `${left} != ${right}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   lessThanOrEqualTo(expr: LessThanOrEqualTo): string {
     const left = this.stringify(expr.operands[0]);
     const right = this.stringify(expr.operands[1]);
     const out = `${left} <= ${right}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   greaterThanOrEqualTo(expr: GreaterThanOrEqualTo): string {
     const left = this.stringify(expr.operands[0]);
     const right = this.stringify(expr.operands[1]);
     const out = `${left} >= ${right}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   notExpression(expr: NotExpression): string {
     const arg = this.stringify(expr.arg);
     const out = `not ${arg}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   andExpression(expr: AndExpression): string {
     const left = this.stringify(expr.operands[0]);
     const right = this.stringify(expr.operands[1]);
     const out = `${left} and ${right}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
   orExpression(expr: OrExpression): string {
     const left = this.stringify(expr.operands[0]);
     const right = this.stringify(expr.operands[1]);
     const out = `${left} or ${right}`;
-    return expr.parenLevel ? `(${out})` : out;
+    return out;
   }
 }
 
 const TO_STRING = new ToString();
+
 const stringify = (u: Expression) => (
   u.acceptExprVisitor(TO_STRING)
 );
@@ -785,7 +891,9 @@ class OperandCount implements ExpressionVisitor<number> {
     return 2;
   }
 }
+
 const OPERAND_COUNT = new OperandCount();
+
 const operandCount = (u: Expression) => (
   u.acceptExprVisitor(OPERAND_COUNT)
 );
@@ -884,23 +992,68 @@ const subexOf = (u: Expression) => {
     u.kind === TAG.SYM ||
     u.kind === TAG.RATIONAL
   ) {
-    return set(stringify(u));
+    return set([stringify(u)]);
   } else {
-    let s = set(stringify(u));
-    for (let i = 1; i < operandCount(u); i++) {
+    let s = set([stringify(u)]);
+    for (let i = 1; i <= operandCount(u); i++) {
       s = s.union(subexOf(operand(u, i)));
     }
     return s;
   }
 };
 
-// deno-fmt-ignore
+const freeof = (u: Expression, t: Expression) => {
+  const U = stringify(u);
+  const T = stringify(t);
+  if (U === T) {
+    return false;
+  } else if (
+    u.kind === TAG.SYM ||
+    u.kind === TAG.INT ||
+    u.kind === TAG.REAL
+  ) {
+    return true;
+  } else {
+    let i = 1;
+    while (i <= operandCount(u)) {
+      if (!freeof(operand(u, i), t)) {
+        return false;
+      }
+      i = i + 1;
+    }
+    return true;
+  }
+};
+
 enum TokenType {
-  left_paren, right_paren, left_brace, right_brace, left_bracket, right_bracket,
-  comma, dot, minus, caret, plus, colon, colon_equal, semicolon,
-  slash, star, bang, bang_equal, equal, equal_equal, greater, greater_equal,
-  less, less_equal, identifier, string, int, float, 
-	EOF,
+  left_paren,
+  right_paren,
+  left_brace,
+  right_brace,
+  left_bracket,
+  right_bracket,
+  comma,
+  dot,
+  minus,
+  caret,
+  plus,
+  slash,
+  star,
+  bang,
+  bang_equal,
+  equal,
+  greater,
+  greater_equal,
+  less,
+  less_equal,
+  identifier,
+  string,
+  int,
+  float,
+  rational,
+  fnForm,
+  EOF,
+  EMPTY,
 }
 
 class ERROR extends Error {
@@ -928,6 +1081,11 @@ const token = (type: TokenType, lexeme: string) => (
 
 const lexemesOf = (code: string) => {
   const keywords: Record<string, TokenType> = {};
+  const functions: SetX = set([
+    "sin",
+    "cos",
+    "tan",
+  ]);
   let $source = code;
   let $tokens: Token[] = [];
   let $start = 0;
@@ -965,17 +1123,32 @@ const lexemesOf = (code: string) => {
     if (keywords[text]) {
       type = keywords[text];
     }
+    if (functions.has(text)) {
+      type = TokenType.fnForm;
+    }
     addToken(type);
   };
 
   const number = () => {
-    let type: TokenType.int | TokenType.float = TokenType.int;
+    let type: TokenType.int | TokenType.float | TokenType.rational =
+      TokenType.int;
     while (isDigit(peek())) {
       advance();
     }
     if (peek() === "." && isDigit(peekNext())) {
       advance();
       type = TokenType.float;
+      while (isDigit(peek())) {
+        advance();
+      }
+    }
+    if (peek() === "/" && peekNext() === "/") {
+      if (type !== TokenType.int) {
+        $error = error(`Expected an integer before “//”`);
+      }
+      type = TokenType.rational;
+      advance();
+      advance();
       while (isDigit(peek())) {
         advance();
       }
@@ -1013,11 +1186,8 @@ const lexemesOf = (code: string) => {
       case "+":
         addToken(TokenType.plus);
         break;
-			case '/':
-				addToken(TokenType.slash);
-				break;
-      case ";":
-        addToken(TokenType.semicolon);
+      case "/":
+        addToken(TokenType.slash);
         break;
       case "*":
         addToken(TokenType.star);
@@ -1026,7 +1196,7 @@ const lexemesOf = (code: string) => {
         addToken(match("=") ? TokenType.bang_equal : TokenType.bang);
         break;
       case "=":
-        addToken(match("=") ? TokenType.equal_equal : TokenType.equal);
+        addToken(TokenType.equal);
         break;
       case "<":
         addToken(match("=") ? TokenType.less_equal : TokenType.less);
@@ -1066,9 +1236,373 @@ const lexemesOf = (code: string) => {
 
 type Parselet<T> = (token: Token, lastnode: T) => Either<ERROR, T>;
 
-const syntax = (code:string) => {
+type ParseRuleTable<T> = Record<TokenType, [Parselet<T>, Parselet<T>, BP]>;
 
-}
+const syntax = (code: string) => {
+  let $cursor = 0;
+  let $current = token(TokenType.EMPTY, "");
+  let $peek = token(TokenType.EMPTY, "");
+  let $error: null | ERROR = null;
+  let $tokens: Token[] = [];
+  const atEnd = () => (
+    $peek.type === TokenType.EOF ||
+    $error !== null
+  );
+  const maybeTokens = lexemesOf(code);
+  if (maybeTokens.isLeft()) {
+    $error = maybeTokens.unwrap();
+  } else {
+    $tokens = maybeTokens.unwrap();
+  }
+  const next = () => {
+    $current = $peek;
+    const nextToken = $tokens[$cursor++];
+    $peek = nextToken;
+    return $current;
+  };
+  const failure = (message: string, phase: string) => {
+    $error = error(`While ${phase}: ${message}`);
+    return left($error);
+  };
+  const success = <T>(node: T) => (
+    right(node)
+  );
+  const nextIs = (type: TokenType) => {
+    if ($peek.type === type) {
+      next();
+      return true;
+    }
+    return false;
+  };
+  const check = (type: TokenType) => {
+    if (atEnd()) {
+      return false;
+    } else {
+      return $peek.type === type;
+    }
+  };
 
-const j = lexemesOf("1/(x^2 - 1)");
-show(j);
+  const productExpr: Parselet<Expression> = (op, lhs) => {
+    if (!isAlgebraic(lhs)) {
+      return failure("Expected an algebraic expression", "parsing a product");
+    }
+    const _rhs = expr(precOf(op.type));
+    if (_rhs.isLeft()) {
+      return _rhs;
+    }
+    const rhs = _rhs.unwrap();
+    if (!isAlgebraic(rhs)) {
+      return failure("Expected an algebraic expression", "parsing a product");
+    }
+    const args = [];
+    if (isProduct(lhs)) {
+      args.push(...lhs.operands);
+    } else {
+      args.push(lhs);
+    }
+    if (isProduct(rhs)) {
+      args.push(...rhs.operands);
+    } else {
+      args.push(rhs);
+    }
+    return success(product(args));
+  };
+
+  const sumExpr: Parselet<Expression> = (op, lhs) => {
+    if (!isAlgebraic(lhs)) {
+      return failure("Expected an algebraic expression", "parsing a sum");
+    }
+    const _rhs = expr(precOf(op.type));
+    if (_rhs.isLeft()) {
+      return _rhs;
+    }
+    const rhs = _rhs.unwrap();
+    if (!isAlgebraic(rhs)) {
+      return failure("Expected an algebraic expression", "parsing a sum");
+    }
+    const args = [];
+    if (isSum(lhs)) {
+      args.push(...lhs.operands);
+    } else {
+      args.push(lhs);
+    }
+    if (isSum(rhs)) {
+      args.push(...rhs.operands);
+    } else {
+      args.push(rhs);
+    }
+    return success(sum(args));
+  };
+
+  const quotientExpr: Parselet<Expression> = (op, lhs) => {
+    if (!isAlgebraic(lhs)) {
+      return failure("Expected an algebraic expression", "parsing a quotient");
+    }
+    const _rhs = expr(precOf(op.type));
+    if (_rhs.isLeft()) {
+      return _rhs;
+    }
+    const rhs = _rhs.unwrap();
+    if (!isAlgebraic(rhs)) {
+      return failure("Expected an algebraic expression", "parsing a quotient");
+    }
+    return success(quotient(lhs, rhs));
+  };
+
+  const powerExpr: Parselet<Expression> = (op, lhs) => {
+    if (!isAlgebraic(lhs)) {
+      return failure("Expected an algebraic expression", "parsing a power");
+    }
+    const _rhs = expr(precOf(op.type));
+    if (_rhs.isLeft()) {
+      return _rhs;
+    }
+    const rhs = _rhs.unwrap();
+    if (!isAlgebraic(rhs)) {
+      return failure("Expected an algebraic expression", "parsing a power");
+    }
+    return success(power(lhs, rhs));
+  };
+
+  const differenceExpr: Parselet<Expression> = (op, lhs) => {
+    if (!isAlgebraic(lhs)) {
+      return failure(
+        "Expected an algebraic expression",
+        "parsing a difference",
+      );
+    }
+    const _rhs = expr(precOf(op.type));
+    if (_rhs.isLeft()) {
+      return _rhs;
+    }
+    const rhs = _rhs.unwrap();
+    if (!isAlgebraic(rhs)) {
+      return failure(
+        "Expected an algebraic expression",
+        "parsing a difference",
+      );
+    }
+    return success(difference(lhs, rhs));
+  };
+
+  const factorialExpr: Parselet<Expression> = (op, arg) => {
+    if (!isAlgebraic(arg)) {
+      return failure("Expected an algebraic expression", "parsing a factorial");
+    }
+    return success(factorial(arg));
+  };
+
+  const negate: Parselet<Expression> = (op) => {
+    const p = precOf(op.type);
+    const _arg = expr(p);
+    if (_arg.isLeft()) return _arg;
+    const arg = _arg.unwrap();
+    if (!isAlgebraic(arg)) {
+      return failure("Expected an algebraic expression", "parsing a negation");
+    }
+    return success(negation(arg));
+  };
+
+  const numeric = (
+    tokenType: TokenType,
+    errorMessage: [string, string],
+    literalFn: (x: string) => Expression,
+  ): Parselet<Expression> =>
+  (token) => {
+    if (token.type !== tokenType) {
+      return failure(errorMessage[0], errorMessage[1]);
+    } else {
+      const out = literalFn(token.lexeme);
+      if (
+        $peek.type === TokenType.identifier ||
+        $peek.type === TokenType.fnForm
+      ) {
+        const _rhs = expr(BP.IMUL);
+        if (_rhs.isLeft()) {
+          return _rhs;
+        }
+        const rhs = _rhs.unwrap();
+        if (!isAlgebraic(rhs)) {
+          return failure(
+            "Expected an algebraic expression",
+            "parsing an implicit multiplication triggered by a numeric",
+          );
+        }
+        return success(product([out, rhs]));
+      }
+      return success(out);
+    }
+  };
+
+  const float = numeric(
+    TokenType.float,
+    ["expected a float", "parsing a float"],
+    (x) => real(Number.parseFloat(x)),
+  );
+
+  const integer = numeric(
+    TokenType.int,
+    ["expected an int", "parsing an int"],
+    (x) => int(Number.parseInt(x)),
+  );
+
+  const identifier: Parselet<Expression> = (token) => {
+    return success(sym(token.lexeme));
+  };
+
+  const rationalNumber: Parselet<Expression> = (token) => {
+    const [a, b] = token.lexeme.split("//");
+    const N = Number.parseInt(a);
+    const D = Number.parseInt(b);
+    return success(rat(N, D));
+  };
+
+  const exprList = <T extends Expression>(
+    check: (u: Expression) => Either<ERROR, T>,
+  ) => {
+    const exprs: T[] = [];
+    do {
+      const _expression = expr();
+      if (_expression.isLeft()) {
+        return _expression;
+      }
+      const _element = check(_expression.unwrap());
+      if (_element.isLeft()) {
+        return _element;
+      }
+      exprs.push(_element.unwrap());
+    } while (nextIs(TokenType.comma));
+    return right(exprs);
+  };
+
+  const fcall: Parselet<Expression> = (token) => {
+    const fname = token.lexeme;
+    if (!nextIs(TokenType.left_paren)) {
+      return failure(
+        "Expected “(” to begin arguments",
+        "parsing a function call",
+      );
+    }
+    let arglist: AlgebraicExpression[] = [];
+    if (!check(TokenType.right_paren)) {
+      const _args = exprList((u) => {
+        if (!isAlgebraic(u)) {
+          return failure(
+            "Expected an algebraic expression argument",
+            "parsing a function call",
+          );
+        } else {
+          return right(u) as Right<AlgebraicExpression>;
+        }
+      });
+      if (_args.isLeft()) {
+        return _args;
+      } else {
+        arglist = _args.unwrap();
+      }
+    }
+    if (!nextIs(TokenType.right_paren)) {
+      return failure(
+        "Expected a “)” to close the arguments",
+        "parsing a function call",
+      );
+    }
+    return success(fun(fname, arglist));
+  };
+
+  const primary: Parselet<Expression> = () => {
+    const _innerExpression = expr();
+    if (_innerExpression.isLeft()) {
+      return _innerExpression;
+    }
+    const innerExpression = _innerExpression.unwrap();
+    if (!nextIs(TokenType.right_paren)) {
+      return failure(
+        "Expected a “)” to close the parenthesized expression",
+        "parsing a parenthesized expression",
+      );
+    }
+    return success(innerExpression);
+  };
+
+  const ___: Parselet<Expression> = (token) => (
+    failure("expression", `unexpected token “${token.lexeme}”`)
+  );
+
+  const ___o = BP.NONE;
+
+  const rules: ParseRuleTable<Expression> = {
+    [TokenType.identifier]: [identifier, ___, BP.LITERAL],
+    [TokenType.int]: [integer, ___, BP.LITERAL],
+    [TokenType.float]: [float, ___, BP.LITERAL],
+    [TokenType.rational]: [rationalNumber, ___, BP.LITERAL],
+    [TokenType.caret]: [___, powerExpr, BP.POWER],
+    [TokenType.plus]: [___, sumExpr, BP.SUM],
+    [TokenType.minus]: [negate, differenceExpr, BP.DIFFERENCE],
+    [TokenType.star]: [___, productExpr, BP.PRODUCT],
+    [TokenType.slash]: [___, quotientExpr, BP.QUOTIENT],
+    [TokenType.bang]: [___, factorialExpr, BP.POSTFIX],
+    [TokenType.fnForm]: [fcall, ___, BP.CALL],
+    [TokenType.left_paren]: [primary, ___, BP.CALL],
+    [TokenType.right_paren]: [___, ___, ___o],
+
+    [TokenType.left_brace]: [___, ___, ___o],
+    [TokenType.right_brace]: [___, ___, ___o],
+    [TokenType.left_bracket]: [___, ___, ___o],
+    [TokenType.right_bracket]: [___, ___, ___o],
+    [TokenType.comma]: [___, ___, ___o],
+    [TokenType.dot]: [___, ___, ___o],
+    [TokenType.bang_equal]: [___, ___, ___o],
+    [TokenType.equal]: [___, ___, ___o],
+    [TokenType.greater]: [___, ___, ___o],
+    [TokenType.greater_equal]: [___, ___, ___o],
+    [TokenType.less]: [___, ___, ___o],
+    [TokenType.less_equal]: [___, ___, ___o],
+    [TokenType.string]: [___, ___, ___o],
+    [TokenType.EOF]: [___, ___, ___o],
+    [TokenType.EMPTY]: [___, ___, ___o],
+  };
+  const prefixRule = (type: TokenType) => rules[type][0];
+  const infixRule = (type: TokenType) => rules[type][1];
+  const precOf = (type: TokenType) => rules[type][2];
+
+  const expr = (minBP: BP = BP.LOWEST) => {
+    let token = next();
+    const prefix = prefixRule(token.type);
+    let lhs = prefix(token, Undefined);
+    if (lhs.isLeft()) {
+      return lhs;
+    }
+    while (minBP < precOf($peek.type)) {
+      if (atEnd()) {
+        break;
+      }
+      token = next();
+      const infix = infixRule(token.type);
+      const rhs = infix(token, lhs.unwrap());
+      if (rhs.isLeft()) {
+        return rhs;
+      }
+      lhs = rhs;
+    }
+    return lhs;
+  };
+
+  const run = () => {
+    next();
+    return expr();
+  };
+  return run();
+};
+
+const expr = (code: string) => {
+  const out = syntax(code);
+  if (out.isLeft()) {
+    return Undefined;
+  }
+  return out.unwrap();
+};
+
+const j = expr(`2x^2 - 1`);
+const n = subexOf(j);
+show(n);

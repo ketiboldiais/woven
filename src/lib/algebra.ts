@@ -727,7 +727,7 @@ class ToString implements ExpressionVisitor<string> {
       const lhs = expr.operands[0];
       const rhs = expr.operands[1];
       if (isInt(lhs) && lhs.value === -1) {
-        return `-${stringify(rhs)}`;
+        return `-${toString(rhs)}`;
       }
       if (
         (isInt(lhs) && isSym(rhs)) ||
@@ -739,7 +739,7 @@ class ToString implements ExpressionVisitor<string> {
         (isReal(lhs) &&
           (isPower(rhs) && (isSym(rhs.base) || isFunctionForm(rhs.base))))
       ) {
-        return `${stringify(lhs)}${stringify(rhs)}`;
+        return `${toString(lhs)}${toString(rhs)}`;
       }
     }
     const out = this.stringifyList("*", expr.operands);
@@ -825,7 +825,10 @@ class ToString implements ExpressionVisitor<string> {
 
 const TO_STRING = new ToString();
 
-const stringify = (u: Expression) => (
+/**
+ * Returns the expression `u` as a string.
+ */
+const toString = (u: Expression) => (
   u.acceptExprVisitor(TO_STRING)
 );
 
@@ -894,6 +897,11 @@ class OperandCount implements ExpressionVisitor<number> {
 
 const OPERAND_COUNT = new OperandCount();
 
+/**
+ * Given the expression `u`, returns the number
+ * of operands of `u`. If `u` is not a compound
+ * expression, returns `0`.
+ */
 const operandCount = (u: Expression) => (
   u.acceptExprVisitor(OPERAND_COUNT)
 );
@@ -981,10 +989,22 @@ class OperandAt implements ExpressionVisitor<Expression> {
   }
 }
 
-const operand = (expr: Expression, at: number) => (
-  expr.acceptExprVisitor(new OperandAt(at))
+/**
+ * Returns the operand of the expression
+ * `u` at the given `index`. This function
+ * assumes that `u` is a compound expression.
+ * If `u` is not a compound expression, or if
+ * the `index` is out of bounds, returns
+ * the global symbol `Undefined`.
+ */
+const operand = (u: Expression, index: number) => (
+  u.acceptExprVisitor(new OperandAt(index))
 );
 
+/**
+ * Returns a set comprising the subexpressions of
+ * the given expression `u`.
+ */
 const subexOf = (u: Expression) => {
   if (
     u.kind === TAG.INT ||
@@ -992,9 +1012,9 @@ const subexOf = (u: Expression) => {
     u.kind === TAG.SYM ||
     u.kind === TAG.RATIONAL
   ) {
-    return set([stringify(u)]);
+    return set([toString(u)]);
   } else {
-    let s = set([stringify(u)]);
+    let s = set([toString(u)]);
     for (let i = 1; i <= operandCount(u); i++) {
       s = s.union(subexOf(operand(u, i)));
     }
@@ -1003,8 +1023,8 @@ const subexOf = (u: Expression) => {
 };
 
 const freeof = (u: Expression, t: Expression) => {
-  const U = stringify(u);
-  const T = stringify(t);
+  const U = toString(u);
+  const T = toString(t);
   if (U === T) {
     return false;
   } else if (

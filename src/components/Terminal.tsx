@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import css from './Terminal.module.scss';
-import {
-  compiler,
-  strof,
-} from '../lib/main';
+import { compiler, strof } from '../lib/main';
+import { FPlot2D } from './Graphics';
 
 export default function Terminal() {
   const [code, setCode] = useState('');
@@ -34,6 +32,7 @@ export default function Terminal() {
       </div>
       <textarea value={code} onChange={(e) => setCode(e.target.value)} />
       <pre>{output}</pre>
+      <FPlot2D fn={'f(x) = cos(x)'}/>
     </div>
   );
 }

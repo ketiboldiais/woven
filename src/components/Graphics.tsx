@@ -5,16 +5,14 @@ import {
   isGroup,
   isText,
   RenderableText,
-  tuple,
   coord,
   line2D,
   group,
   plot2D,
-  text,
   grid2D,
-  circle,
   svg,
-} from '../lib/main';
+} from '../lib/graphics';
+import { tuple } from '../lib/math';
 
 const Path = ({ of }: { of: RenderablePath }) => (
   <path
@@ -52,8 +50,8 @@ const Group = ({ of }: { of: RenderableGroup }) => (
 
 const Text = ({ of }: { of: RenderableText }) => (
   <text
-    x={of.$position.x}
-    y={of.$position.y}
+    x={of.$position.$x}
+    y={of.$position.$y}
     fontSize={of.$fontSize}
     fontFamily={of.$fontFamily}
     fill={of.$fill}
@@ -64,7 +62,9 @@ const Text = ({ of }: { of: RenderableText }) => (
   </text>
 );
 
-export const FPlot2D = ({ fn }: {
+export const FPlot2D = ({
+  fn,
+}: {
   /**
    * The function to plot.
    * This is a string of the form `f(x) = E`,
@@ -72,7 +72,7 @@ export const FPlot2D = ({ fn }: {
    * is the variable, and `E` is expression
    * corresponding to the rule of assignment.
    */
-  fn: string
+  fn: string;
 }) => {
   const xdomain = tuple(-5, 5);
   const ydomain = tuple(-5, 5);
@@ -87,6 +87,7 @@ export const FPlot2D = ({ fn }: {
     grid2D(xdomain, ydomain, gridIncrement).stroke('lightgrey').strokeWidth(0.25),
     curve.path().fill('none').stroke('red'),
   ]).coordinateSystem(cs);
+
   const s = svg(250, 250).children([elements]).done();
 
   return (

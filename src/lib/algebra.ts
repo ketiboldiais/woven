@@ -11,37 +11,6 @@ import {
 
 const show = console.log;
 
-/** Returns the integer remainder of `a` and `b`. */
-const rem = (a: number, b: number) => {
-  a = Math.floor(a);
-  b = Math.floor(b);
-  return ((a % b) + b) % b;
-};
-
-/** Returns the integer quotient of `a` and `b`. */
-const quot = (a:number, b:number) => {
-	a = Math.floor(a);
-	b = Math.floor(b);
-	return Math.floor(a/b);
-}
-
-/** Returns the greatest common denominator of `a` and `b`. */
-const gcd = (a: number, b: number) => {
-  a = Math.floor(a);
-  b = Math.floor(b);
-  if (b === 0) {
-    return Math.abs(a);
-  }
-	let A = a;
-	let B = b;
-	while (B !== 0) {
-		let R = rem(A,B);
-		A = B;
-		B = R;
-	}
-	return Math.abs(A);
-};
-
 enum TAG {
   INT = "INT",
   REAL = "REAL",

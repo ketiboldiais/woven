@@ -1,5 +1,4 @@
 import {
-  BP,
   Either,
   isDigit,
   isLatinGreek,
@@ -8,8 +7,8 @@ import {
   right,
   treed,
 } from "./aux";
-
-const show = console.log;
+import { BP } from './bp';
+import { show } from "./aux";
 
 enum TAG {
   INT = "INT",

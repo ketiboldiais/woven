@@ -42,14 +42,14 @@ export const range = (
 ) => lerp(interval2, ilerp(interval1, value));
 
 /** Returns the integer remainder of `a` and `b`. */
-export const mod = (a: number, b: number) => {
+export const rem = (a: number, b: number) => {
   a = Math.floor(a);
   b = Math.floor(b);
   return ((a % b) + b) % b;
 };
 
 /** Returns `a rem b` (the signed remainder). */
-export const rem = (a: number, b: number) => (a % b);
+export const mod = (a: number, b: number) => (a % b);
 
 /** Returns the integer quotient of `a` and `b`. */
 export const quot = (a: number, b: number) => {
@@ -120,3 +120,29 @@ export const isEven = (n: number) => (
 
 /** Returns true if the given number is odd. */
 export const isOdd = (n: number) => (!isEven(n));
+
+/**
+ * Where `fraction` corresponds to the rational
+ * `n/d`, returns `n/d` in standard form (i.e.,
+ * n/d in “simplest” terms). If `d = 0`, returns
+ * `fraction`.
+ */
+export const sfrac = (fraction: [number, number]) => {
+  const [n, d] = fraction;
+  if (d === 1) {
+    return fraction;
+  } else if (d === 0) {
+    return fraction;
+  } else {
+    if (rem(n, d) === 0) {
+      return [quot(n, d), 1];
+    } else {
+      const g = gcd(n, d);
+      if (d > 0) {
+        return [quot(n, g), quot(d, g)];
+      } else {
+        return [quot(-n, g), quot(-d, g)];
+      }
+    }
+  }
+};

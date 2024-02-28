@@ -1356,8 +1356,7 @@ const frac = (numerator: number, denominator: number) => (
 const isFrac = (x: any): x is Fraction => (
   x instanceof Fraction
 );
-
-import { BP } from "./aux";
+import { BP } from "./bp";
 import {
   csc,
   factorialize,

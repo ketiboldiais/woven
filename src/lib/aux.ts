@@ -1,3 +1,14 @@
+export const show = (u: any) => {
+  if (Array.isArray(u)) {
+    console.log(u);
+  } else if (typeof u === "object") {
+    console.log(treed(u));
+  } else {
+    console.log(u);
+  }
+  return u;
+};
+
 // § Auxiliary Functions =======================================================
 /**
  * At the parsing stage, all parsed node results
@@ -102,31 +113,6 @@ export const isMathSymbol = (char: string) => /^[∀-⋿]/u.test(char);
  * a digit (specifically, a Hindu-Arabic numeral).
  */
 export const isDigit = (char: string) => "0" <= char && char <= "9";
-
-export enum BP {
-  NONE,
-  LOWEST,
-  STRINGOP,
-  ASSIGN,
-  LITERAL,
-  OR,
-  NOR,
-  AND,
-  NAND,
-  XOR,
-  XNOR,
-  NOT,
-  EQUALITY,
-  RELATION,
-  SUM,
-  DIFFERENCE,
-  PRODUCT,
-  QUOTIENT,
-  IMUL,
-  POWER,
-  POSTFIX,
-  CALL,
-}
 
 /**
  * Returns a pretty-print string of the

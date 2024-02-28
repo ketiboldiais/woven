@@ -1,0 +1,31 @@
+# Math Library
+Woven exports several numerical methods. These methods are used throughout the Woven architecture. Within the code base, these methods are found in `math.ts`. 
+
+## Numeric Analysis 
+
+### lerp(${I}$: _[number,number]_, ${v}$: _number_) ${\to}$ _number_
+Given the interval ${I = [a,b],}$ with ${a \in \reals}$ and ${b \in \reals,}$ returns the number between ${a}$ and ${b}$ at the specified increment ${v.}$ 
+
+### clamp(${a}$: _number_, ${v}$: _number_, ${b}$: _number_) ${\to}$ _number_
+Returns ${v}$ if and only if ${a \lt v \lt b.}$ If ${v \lt a,}$ returns ${a.}$ If ${b \lt v,}$ returns ${b.}$ As its name suggests, the `clamp` function ensures ${v}$ stays within the interval ${[a,b].}$
+
+### ilerp(${I}$: [_number_, _number_], ${v}$: _number_) ${\to}$ _number_
+The _inverse lerp_: Given the interval ${[a,b]}$ with ${a \in \reals}$ and ${b \in \reals,}$ returns the distance between ${v}$ and ${a,}$ in terms of the percentage (a decimal between 0 and 1 inclusive) of the distance between ${a}$ and ${b.}$
+
+### range(${I_1}$: [_number_, _number_], ${I_2}$: [_number_, _number_]) ${\to}$ (x:_number_) ${\to}$ _number_
+Given the numeric intervals ${I_1}$ and ${I_2,}$ returns a function that takes a number ${x \in I_1}$ and returns the corresponding number in ${I_2}$ with the same relative distance between the endpoints.
+
+### percent(${a}$: _number_, ${b}$: _number_) ${\to}$ _number_
+Returns ${a\texttt{\%}}$ of ${b.}$
+
+
+## Number Theory
+### gcd(${a}$: _number_, ${b}$: _number_) ${\to}$ _number_
+Returns the greatest common denominator of ${a}$ and ${b.}$
+
+### rem(${a}$: _number_, ${b}$: _number_) ${\to}$ _number_
+Returns the integer remainder of ${a}$ and ${b.}$
+
+### mod(${a}$: _number_, ${b}$: _number_) ${\to}$ _number_
+Returns the _signed remainder_ of ${a}$ and ${b.}$ This function is equivalent to ${a ~\texttt{\%}~ b}$ in JavaScript.
+

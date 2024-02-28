@@ -11,6 +11,9 @@ dependencies:
   '@mdx-js/rollup':
     specifier: ^3.0.0
     version: 3.0.0(rollup@4.9.5)
+  katex:
+    specifier: ^0.16.9
+    version: 0.16.9
   react:
     specifier: ^18.2.0
     version: 18.2.0

@@ -1,8 +1,8 @@
 import './App.css';
+import "katex/dist/katex.min.css";
 import Overview from './pages/overview.mdx';
 import Compiler from './pages/compiler.mdx';
-import Tokenizer from './pages/tokenizer.mdx';
-import FunctionPlot2D from './pages/function-plot-2d.mdx';
+import MathLibrary from './pages/math-library.mdx';
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom';
 
 type LinkObject = {
@@ -16,9 +16,8 @@ type LinkObject = {
 
 const links: LinkObject[] = [
   { text: 'Overview', path: '/', page: <Overview /> },
+  { text: 'Math Library', path: '/math-library', page: <MathLibrary/> },
   { text: 'Compiler', path: '/compiler', page: <Compiler /> },
-  { text: '2D Function Plot', path: '/function-plot-2d', page: <FunctionPlot2D /> },
-  { text: 'Tokenizer', path: '/tokenizer', page: <Tokenizer /> },
 ];
 
 const Nav = () => (

@@ -9,16 +9,20 @@ export class Vector3D {
     this.$z = z;
   }
 
+  zero() {
+    return new Vector3D(0, 0, 0);
+  }
+
   /**
    * Returns a new Vector3D, whose elements are the result
    * of applying `f` on `(a,b)`, where `a`
    * is an element of this vector,
    * and `b` is some other number.
    */
-  binop(f: (a: number, b: number) => number, b: number) {
-    const x = f(this.$x, b);
-    const y = f(this.$y, b);
-    const z = f(this.$z, b);
+  binop(f: (a: number, b: number) => number, other: Vector3D) {
+    const x = f(this.$x, other.$x);
+    const y = f(this.$y, other.$y);
+    const z = f(this.$z, other.$z);
     return new Vector3D(x, y, z);
   }
 
@@ -91,6 +95,14 @@ export class Vector3D {
     const sum = bx_ax + by_ay + bz_az;
     return Math.sqrt(sum);
   }
+
+  add(other: Vector3D) {
+		return this.binop((a,b) => a + b, other);
+  }
+	sub(other: Vector3D) {
+		return this.binop((a,b) => a - b, other);
+	}
+	
 }
 
 /** Returns a new Vector3D. */

@@ -106,3 +106,37 @@ export const FPlot2D = ({
     </svg>
   );
 };
+
+export const Test = () => {
+  const xdomain = tuple(-5, 5);
+  const ydomain = tuple(-5, 5);
+  const gridIncrement = 1;
+  const cs = coord(xdomain, ydomain);
+  const xAxis = line2D([-10, 0], [10, 0]);
+  const yAxis = line2D([0, -10], [0, 10]);
+  const axes = group([xAxis, yAxis]).stroke('grey').strokeWidth(0.5);
+  const curve = plot2D(`f(x) = x^2`, xdomain, ydomain);
+  const elements = group([
+    axes,
+    grid2D(xdomain, ydomain, gridIncrement).stroke('lightgrey').strokeWidth(0.25),
+    curve.path().fill('none').stroke('red'),
+  ]).coordinateSystem(cs);
+
+  const s = svg(250, 250).children([elements]).done();
+
+  return (
+    <svg viewBox={s.$viewBox} preserveAspectRatio={s.$preserveAspectRatio}>
+      {s.map((c, i) => {
+        if (isPath(c)) {
+          return <Path of={c} key={`path-${i}`} />;
+        } else if (isGroup(c)) {
+          return <Group of={c} key={`group-${i}`} />;
+        } else if (isText(c)) {
+          return <Text of={c} key={`text-${i}`} />;
+        } else {
+          return <></>;
+        }
+      })}
+    </svg>
+  );
+};

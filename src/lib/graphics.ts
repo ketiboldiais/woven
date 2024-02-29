@@ -1,6 +1,5 @@
 import { compiler, isCallable } from "./main";
-import { clamp, range } from "./math";
-import { v3D, Vector3D } from "./vector3d";
+import { clamp, range, v3D, Vector3D } from "./math";
 
 // § Mixin Function ============================================================
 type Constructor<T = {}> = new (...args: any[]) => T;

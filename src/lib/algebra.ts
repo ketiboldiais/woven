@@ -159,7 +159,7 @@ interface ExpressionVisitor<T> {
   orExpression(expr: OrExpression): T;
 }
 
-abstract class Statement extends Evaluator {}
+abstract class Stmt extends Evaluator {}
 
 abstract class Expression extends Evaluator {
   abstract acceptExprVisitor<T>(visitor: ExpressionVisitor<T>): T;

@@ -1,3 +1,15 @@
+// ============================================================ Type Guards
+/** Returns true if the given `n` is a JavaScript number. */
+export const isJSNum = (x: any): x is number => (
+  typeof x === "number" && !Number.isNaN(x)
+);
+
+/** Returns true if the given `n` is a JavaScript integer. */
+export const isJSInt = (n: any): n is number => (
+  typeof n === "number" && (Number.isInteger(n))
+);
+
+// ============================================================ Numeric Analysis
 /**
  * Returns the number between `x` and `y` at the specified increment `a`.
  */
@@ -41,6 +53,19 @@ export const range = (
   value: number,
 ) => lerp(interval2, ilerp(interval1, value));
 
+/** Returns a% of b. */
+export const percent = (a: number, b: number) => ((a / 100) * b);
+
+/** A utility method that generates a pseudorandom string. @param length - The max length of the resulting string. @param base - The base from which to draw characters. */
+export const uid = (length: number = 4, base = 36) => (
+  Math.random()
+    .toString(base)
+    .replace(/[^a-z]+/g, "")
+    .substring(0, length + 1)
+);
+
+// =============================================================== Number Theory
+
 /** Returns the integer remainder of `a` and `b`. */
 export const rem = (a: number, b: number) => {
   a = Math.floor(a);
@@ -74,30 +99,6 @@ export const gcd = (a: number, b: number) => {
   }
   return Math.abs(A);
 };
-
-/** A utility method that generates a pseudorandom string. @param length - The max length of the resulting string. @param base - The base from which to draw characters. */
-export const uid = (length: number = 4, base = 36) => (
-  Math.random()
-    .toString(base)
-    .replace(/[^a-z]+/g, "")
-    .substring(0, length + 1)
-);
-
-/** Returns a tuple. */
-export const tuple = <T extends any[]>(...data: T) => data;
-
-/** Returns a% of b. */
-export const percent = (a: number, b: number) => ((a / 100) * b);
-
-/** Returns true if the given `n` is a JavaScript number. */
-export const isJSNum = (x: any): x is number => (
-  typeof x === "number" && !Number.isNaN(x)
-);
-
-/** Returns true if the given `n` is a JavaScript integer. */
-export const isJSInt = (n: any): n is number => (
-  typeof n === "number" && (Number.isInteger(n))
-);
 
 /** Returns the factorial of the given number. */
 export const factorialize = (num: number) => {
@@ -147,8 +148,10 @@ export const sfrac = (fraction: [number, number]) => {
   }
 };
 
-/** An object corresponding to a vector in R^3. */
-export class Vector3D {
+/** Returns a tuple. */
+export const tuple = <T extends any[]>(...data: T) => data;
+
+class Vector3D {
   $x: number;
   $y: number;
   $z: number;
@@ -157,103 +160,29 @@ export class Vector3D {
     this.$y = y;
     this.$z = z;
   }
-
-  zero() {
-    return new Vector3D(0, 0, 0);
-  }
-
-  /**
-   * Returns a new Vector3D, whose elements are the result
-   * of applying `f` on `(a,b)`, where `a`
-   * is an element of this vector,
-   * and `b` is some other number.
-   */
-  binop(f: (a: number, b: number) => number, other: Vector3D) {
-    const x = f(this.$x, other.$x);
-    const y = f(this.$y, other.$y);
-    const z = f(this.$z, other.$z);
-    return new Vector3D(x, y, z);
-  }
-
-  /**
-   * Returns a new Vector3D,
-   * whose elements are the result of applying `f`
-   * to each of this vector’s elements.
-   */
-  unop(f: (n: number) => number) {
-    const x = f(this.$x);
-    const y = f(this.$y);
-    const z = f(this.$z);
-    return new Vector3D(x, y, z);
-  }
-
-  /**
-   * Returns a new Vector3D corresponding
-   * to the negation of this vector.
-   */
-  neg() {
-    return this.unop((n) => -n);
-  }
-
-  /**
-   * Returns the cross product of this vector
-   * and the other vector.
-   */
-  cross(other: Vector3D) {
-    const a = this.$x;
-    const b = this.$y;
-    const c = this.$z;
-
-    const x = other.$x;
-    const y = other.$y;
-    const z = other.$z;
-
-    const bz = b * z;
-    const cy = c * y;
-    const cx = c * x;
-    const az = a * z;
-    const ay = a * y;
-    const bx = b * x;
-
-    return (new Vector3D(
-      bz - cy,
-      cx - az,
-      ay - bx,
-    ));
-  }
-
-  /**
-   * Returns the 3D distance between this vector
-   * and the provided vector. If this vector
-   * or the provided vector are not 3D vectors,
-   * an error is returned.
-   */
-  distance(other: Vector3D) {
-    const ax = this.$x;
-    const bx = other.$x;
-    const bx_ax = bx - ax;
-
-    const ay = this.$y;
-    const by = other.$y;
-    const by_ay = by - ay;
-
-    const az = this.$z;
-    const bz = other.$z;
-    const bz_az = bz - az;
-
-    const sum = bx_ax + by_ay + bz_az;
-    return Math.sqrt(sum);
-  }
-
-  add(other: Vector3D) {
-    return this.binop((a, b) => a + b, other);
-  }
-  sub(other: Vector3D) {
-    return this.binop((a, b) => a - b, other);
-  }
 }
 
-/** Returns a new Vector3D. */
-export const v3D = (x: number, y: number, z: number) => (
-  new Vector3D(x, y, z)
-);
+export enum BP {
+  NONE,
+  LOWEST,
+  STRINGOP,
+  ASSIGN,
+  LITERAL,
+  OR,
+  NOR,
+  AND,
+  NAND,
+  XOR,
+  XNOR,
+  NOT,
+  EQUALITY,
+  RELATION,
+  SUM,
+  DIFFERENCE,
+  PRODUCT,
+  QUOTIENT,
+  IMUL,
+  POWER,
+  POSTFIX,
+  CALL,
+}

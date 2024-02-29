@@ -1,9 +1,6 @@
 import './App.css';
 import "katex/dist/katex.min.css";
 import Overview from './pages/overview.mdx';
-import Compiler from './pages/compiler.mdx';
-import MathLibrary from './pages/math-library.mdx';
-import Graphics from './pages/graphics.mdx';
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom';
 
 type LinkObject = {
@@ -17,9 +14,6 @@ type LinkObject = {
 
 const links: LinkObject[] = [
   { text: 'Overview', path: '/', page: <Overview /> },
-  { text: 'Math Library', path: '/math-library', page: <MathLibrary/> },
-  { text: 'Graphics', path: '/graphics', page: <Graphics/> },
-  { text: 'Compiler', path: '/compiler', page: <Compiler /> },
 ];
 
 const Nav = () => (

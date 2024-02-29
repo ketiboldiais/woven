@@ -11,8 +11,9 @@ import {
   plot2D,
   grid2D,
   svg,
+  circle,
 } from '../lib/graphics';
-import { tuple } from '../lib/math';
+import { tuple } from '../lib/math.set';
 
 const Path = ({ of }: { of: RenderablePath }) => (
   <path
@@ -116,11 +117,14 @@ export const Test = () => {
   const yAxis = line2D([0, -10], [0, 10]);
   const axes = group([xAxis, yAxis]).stroke('grey').strokeWidth(0.5);
   const curve = plot2D(`f(x) = x^2`, xdomain, ydomain);
+  const c = circle(2,2).r(5).path();
   const elements = group([
     axes,
     grid2D(xdomain, ydomain, gridIncrement).stroke('lightgrey').strokeWidth(0.25),
     curve.path().fill('none').stroke('red'),
+    c,
   ]).coordinateSystem(cs);
+  
 
   const s = svg(250, 250).children([elements]).done();
 

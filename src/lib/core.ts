@@ -1,20 +1,27 @@
 // ============================================================ Type Guards
-/** Returns true if the given `n` is a JavaScript number. */
+/**
+ * Returns true if the given `x` is a JavaScript number, 
+ * false otherwise. This function will return false if `x` is
+ * `NaN`.
+ */
 export const isJSNum = (x: any): x is number => (
   typeof x === "number" && !Number.isNaN(x)
 );
 
-/** Returns true if the given `n` is a JavaScript integer. */
+/**
+ * Returns true if the given `x` is a JavaScript number,
+ * and more specifically, an integer.
+ */
 export const isJSInt = (n: any): n is number => (
-  typeof n === "number" && (Number.isInteger(n))
+  isJSNum(n) && (Number.isInteger(n))
 );
 
 // ============================================================ Numeric Analysis
 /**
  * Returns the number between `x` and `y` at the specified increment `a`.
  */
-export const lerp = (interval: [number, number], value: number) => (
-  interval[0] * (1 - value) + interval[1] * value
+export const lerp = (interval: [number, number], inc: number) => (
+  interval[0] * (1 - inc) + interval[1] * inc
 );
 
 /**

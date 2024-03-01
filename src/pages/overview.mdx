@@ -2,53 +2,86 @@
 _Woven_ is a TypeScript-based computer algebra library.
 
 ## Type Guards
+Woven’s type guard functions are used throughout the code base for type checking.
+
 ### isJSNum(𝑥: _any_) → _boolean_
 Returns true if ${x}$ is a JavaScript number; false otherwise. This function will return false if ${x}$ is `NaN`.
 
 ### isJSInt(𝑥: _any_) → _boolean_
 Returns true if ${x}$ is a JavaScript number and is an integer; false otherwise.
 
-## Numeric Analysis 
-Within the code base, the following methods are implemented in `math.numerics.ts`.
+### Class: `Left<𝑇>`
+A box type that wraps a successful output or “safe” data.
 
-### lerp(${I}$: _[number,number]_, ${v}$: _number_) ${\to}$ _number_
-Given the interval ${I = [a,b],}$ with ${a \in \reals}$ and ${b \in \reals,}$ returns the number between ${a}$ and ${b}$ at the specified increment ${v.}$ 
+### Class: `Right<𝑇>`
+A box type that wraps an unsuccessful output or “unsafe” data.
+
+### Type: `Either<𝐴,𝐵>`
+A type corresponding to either a generic type ${A}$ or a generic type ${B.}$ This is an alias for `Left<𝐴>|Right<𝐵>`.
+
+
+## Numeric Analysis 
+The numeric analysis functions implement basic numeric methods.
+
+### lerp(𝐼: _[number,number]_, 𝑛: _number_) → _number_
+Given the interval ${I = [a,b],}$ with ${a \in \reals}$ and ${b \in \reals,}$ returns the number between ${a}$ and ${b}$ at the specified increment ${n.}$ 
 
 ### clamp(${a}$: _number_, ${v}$: _number_, ${b}$: _number_) ${\to}$ _number_
 Returns ${v}$ if and only if ${a \lt v \lt b.}$ If ${v \lt a,}$ returns ${a.}$ If ${b \lt v,}$ returns ${b.}$ As its name suggests, the `clamp` function ensures ${v}$ stays within the interval ${[a,b].}$
 
-### ilerp(${I}$: [_number_, _number_], ${v}$: _number_) ${\to}$ _number_
-The _inverse lerp_: Given the interval ${[a,b]}$ with ${a \in \reals}$ and ${b \in \reals,}$ returns the distance between ${v}$ and ${a,}$ in terms of the percentage (a decimal between 0 and 1 inclusive) of the distance between ${a}$ and ${b.}$
+### ilerp(𝐼: [_number_, _number_], 𝑣: _number_) → _number_
+The _inverse lerp_: Given the interval ${I = [a,b]}$ with ${a \in \reals}$ and ${b \in \reals,}$ returns the distance between ${v}$ and ${a,}$ in terms of the percentage (a decimal between 0 and 1 inclusive) of the distance between ${a}$ and ${b.}$
 
-### range(${I_1}$: [_number_, _number_], ${I_2}$: [_number_, _number_]) ${\to}$ (x:_number_) ${\to}$ _number_
+### range(𝐼₁: [_number_, _number_], 𝐼₂: [_number_, _number_]) → (𝑥:_number_) → _number_
 Given the numeric intervals ${I_1}$ and ${I_2,}$ returns a function that takes a number ${x \in I_1}$ and returns the corresponding number in ${I_2}$ with the same relative distance between the endpoints.
 
-### percent(${a}$: _number_, ${b}$: _number_) ${\to}$ _number_
-Returns ${a\texttt{\%}}$ of ${b.}$
+### percent(𝑝: _number_, 𝑛: _number_) → _number_
+Returns ${p\texttt{\%}}$ of the number ${n.}$
 
 ### uid(${\ell}$: _number_, ${b}$: _number_) ${\to}$ _number_
 Returns a pseudorandom string of characters from ${a}$ through ${z}$ inclusive, using base ${b.}$
 
 ## Number Theory
+The number theory functions implement some common number-theoretic operations.
 
-
-### rem(${a}$: _number_, ${b}$: _number_) ${\to}$ _number_
+### rem(𝑎: _number_, 𝑏: _number_) → _number_
 Returns the integer remainder of ${a}$ and ${b.}$
 
-### mod(${a}$: _number_, ${b}$: _number_) ${\to}$ _number_
+### mod(𝑎: _number_, 𝑏: _number_) → _number_
 Returns the _signed remainder_ of ${a}$ and ${b.}$ This function is equivalent to ${a ~\texttt{\%}~ b}$ in JavaScript.
 
-### gcd(${a}$: _number_, ${b}$: _number_) ${\to}$ _number_
+### quot(𝑎: _number_, 𝑏: _number_) → _number_
+Returns the integer quotient of ${a}$ and ${b,}$ where ${a}$ and ${b}$ are assumed to be integers. That is, ${\lfloor a/b \rfloor.}$
+
+### gcd(𝑎: _number_, 𝑏: _number_) → _number_
 Returns the greatest common denominator of ${a}$ and ${b.}$
 
-### quot(${a}$: _number_, ${b}$: _number_) ${\to}$ _number_
-Returns the integer quotient of ${a}$ and ${b,}$ where ${a}$ and ${b}$ are assumed to be integers. That is, ${\lfloor a/b \rfloor.}$
+### sfrac(𝑞: [_number_, _number_]) → [_number_, _number_]
+Where ${q}$ is assumed to be a rational number (represented by a pair of numbers), returns a pair of numbers corresponding to ${q}$ in simplest form.
+
+### fact(𝑛: _number_) → _number_
+Returns ${n!.}$
+
+### isEven(𝑛: _number_) → _number_
+Returns true if ${n}$ is an even integer; false otherwise.
+
+### isOdd(𝑛: _number_) → _number_
+Returns true if ${n}$ is an odd integer; false otherwise.
+
+## Trigonometric Functions
+The following functions implement various trigonometric operations.
+
+### sec(𝑥: _number_) → _number_
+Returns ${\sec x,}$ where ${x \in \reals.}$
+
+### csc(𝑥: _number_) → _number_
+Returns ${\csc x,}$ where ${x \in \reals.}$
 
 ## Set Theory
 Within the code base, the following methods are implemented in `math.set.ts`.
 
-### tuple(...${data}$: ${T}$) ${\to}$ ${T}$
-Given a comma-separated list of data of generic type ${T,}$ returns a tuple of type ${T.}$ This function is used primarily for type-checking, since TypeScript cannot infer tuple types in certain cases.
+### tuple(...𝑑: 𝑇) → 𝑇
+Given a comma-separated list ${d}$ of generic type ${T,}$ returns a tuple of type ${T.}$ This function is used primarily for type-checking, since TypeScript cannot infer tuple types in certain cases.
 
 ## Linear Algebra
 Within the code base, the following methods are implemented in `math.linear.ts`.

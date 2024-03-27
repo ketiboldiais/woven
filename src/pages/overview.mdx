@@ -1,7 +1,49 @@
-# Overview
-_Woven_ is a TypeScript-based computer algebra library.
+# Woven
+_Woven_ is a computer algebra system (CAS) written in TypeScript.
 
-## Type Guards
+__Primary Objective.__ To provide a single, comprehensive, and robust library for web-based computer algebra.
+
+__Specific Aims.__ (1) Providing a symbolic computation API; (2) providing a 2D graphics API; (3) providing a 3D graphics API; (4) providing a machine learning API; (5) providing a data analysis API; and (6) providing a web-based interface for non-technical users.
+
+1. [Typings](#typings)
+	1. [isJSNum(𝑥: _any_) → _boolean_](#isjsnum𝑥-any--boolean)
+	2. [isJSInt(𝑥: _any_) → _boolean_](#isjsint𝑥-any--boolean)
+	3. [Class: `Left<𝑇>`](#class-left𝑇)
+	4. [Class: `Right<𝑇>`](#class-right𝑇)
+	5. [Type: `Either<𝐴,𝐵>`](#type-either𝐴𝐵)
+	6. [Type: `Constructor<𝑇={}>`](#type-constructor𝑇)
+	7. [Type: `MixOf<𝐴,𝐵>`](#type-mixof𝐴𝐵)
+2. [Numeric Analysis](#numeric-analysis)
+	1. [Constant: `MAX_INT`: _number_](#constant-max_int-number)
+	2. [Constant: `MAX_FLOAT`: _number_](#constant-max_float-number)
+	3. [lerp(𝐼: _\[number,number\]_, 𝑛: _number_) → _number_](#lerp𝐼-numbernumber-𝑛-number--number)
+	4. [clamp(${a}$: _number_, ${v}$: _number_, ${b}$: _number_) → _number_](#clampa-number-v-number-b-number--number)
+	5. [ilerp(𝐼: \[_number_, _number_\], 𝑣: _number_) → _number_](#ilerp𝐼-number-number-𝑣-number--number)
+	6. [range(𝐼₁: \[_number_, _number_\], 𝐼₂: \[_number_, _number_\]) → (𝑥:_number_) → _number_](#range𝐼-number-number-𝐼-number-number--𝑥number--number)
+	7. [percent(𝑝: _number_, 𝑛: _number_) → _number_](#percent𝑝-number-𝑛-number--number)
+	8. [uid(ℓ: _number_, 𝑏: _number_) → _number_](#uidℓ-number-𝑏-number--number)
+3. [Number Theory](#number-theory)
+	1. [rem(𝑎: _number_, 𝑏: _number_) → _number_](#rem𝑎-number-𝑏-number--number)
+	2. [mod(𝑎: _number_, 𝑏: _number_) → _number_](#mod𝑎-number-𝑏-number--number)
+	3. [quot(𝑎: _number_, 𝑏: _number_) → _number_](#quot𝑎-number-𝑏-number--number)
+	4. [gcd(𝑎: _number_, 𝑏: _number_) → _number_](#gcd𝑎-number-𝑏-number--number)
+	5. [sfrac(𝑞: \[_number_, _number_\]) → \[_number_, _number_\]](#sfrac𝑞-number-number--number-number)
+	6. [fact(𝑛: _number_) → _number_](#fact𝑛-number--number)
+	7. [isEven(𝑛: _number_) → _number_](#iseven𝑛-number--number)
+	8. [isOdd(𝑛: _number_) → _number_](#isodd𝑛-number--number)
+4. [Trigonometric Functions](#trigonometric-functions)
+	1. [sec(𝑥: _number_) → _number_](#sec𝑥-number--number)
+	2. [csc(𝑥: _number_) → _number_](#csc𝑥-number--number)
+5. [Set Theory](#set-theory)
+	1. [tuple(...𝑑: 𝑇) → 𝑇](#tuple𝑑-𝑇--𝑇)
+6. [Linear Algebra](#linear-algebra)
+	1. [Class: `Vector3`](#class-vector3)
+		1. [𝑢.add(𝑣: `Vector3`)](#𝑢add𝑣-vector3)
+7. [Number Systems](#number-systems)
+	1. [Scientific Numbers](#scientific-numbers)
+
+
+## Typings
 Woven’s type guard functions are used throughout the code base for type checking.
 
 ### isJSNum(𝑥: _any_) → _boolean_
@@ -19,18 +61,30 @@ A box type that wraps an unsuccessful output or “unsafe” data.
 ### Type: `Either<𝐴,𝐵>`
 A type corresponding to either a generic type ${A}$ or a generic type ${B.}$ This is an alias for `Left<𝐴>|Right<𝐵>`.
 
+### Type: `Constructor<𝑇={}>`
+A type alias for a mixin function. The exact definition:
+
+~~~ts
+type Constructor<T={}> = new (...args: any[]) => T;
+~~~
+
+### Type: `MixOf<𝐴,𝐵>`
+An alias for a mixin of generic types ${A}$ and ${B.}$
+
 
 ## Numeric Analysis 
 The numeric analysis functions implement basic numeric methods.
 
 ### Constant: `MAX_INT`: _number_
-The value of the largest ${n \in \int}$ such that ${n}$ and ${n+1}$ are representable as _number_ values (i.e., ${9~007~199~254~740~991}$).
+The value of the largest ${n \in \Z}$ such that ${n}$ and ${n+1}$ are representable as _number_ values (i.e., ${9~007~199~254~740~991}$).
 
+### Constant: `MAX_FLOAT`: _number_
+The largest possible floating point value in Woven (approximately ${1.79 \times 10^{308}.}$)
 
 ### lerp(𝐼: _[number,number]_, 𝑛: _number_) → _number_
 Given the interval ${I = [a,b],}$ with ${a \in \reals}$ and ${b \in \reals,}$ returns the number between ${a}$ and ${b}$ at the specified increment ${n.}$ 
 
-### clamp(${a}$: _number_, ${v}$: _number_, ${b}$: _number_) ${\to}$ _number_
+### clamp(${a}$: _number_, ${v}$: _number_, ${b}$: _number_) → _number_
 Returns ${v}$ if and only if ${a \lt v \lt b.}$ If ${v \lt a,}$ returns ${a.}$ If ${b \lt v,}$ returns ${b.}$ As its name suggests, the `clamp` function ensures ${v}$ stays within the interval ${[a,b].}$
 
 ### ilerp(𝐼: [_number_, _number_], 𝑣: _number_) → _number_
@@ -42,7 +96,7 @@ Given the numeric intervals ${I_1}$ and ${I_2,}$ returns a function that takes a
 ### percent(𝑝: _number_, 𝑛: _number_) → _number_
 Returns ${p\texttt{\%}}$ of the number ${n.}$
 
-### uid(${\ell}$: _number_, ${b}$: _number_) ${\to}$ _number_
+### uid(ℓ: _number_, 𝑏: _number_) → _number_
 Returns a pseudorandom string of characters from ${a}$ through ${z}$ inclusive, using base ${b.}$
 
 ## Number Theory
@@ -82,13 +136,35 @@ Returns ${\sec x,}$ where ${x \in \reals.}$
 Returns ${\csc x,}$ where ${x \in \reals.}$
 
 ## Set Theory
-Within the code base, the following methods are implemented in `math.set.ts`.
+The following functions implement various set theoretic operations.
 
 ### tuple(...𝑑: 𝑇) → 𝑇
 Given a comma-separated list ${d}$ of generic type ${T,}$ returns a tuple of type ${T.}$ This function is used primarily for type-checking, since TypeScript cannot infer tuple types in certain cases.
 
 ## Linear Algebra
-Within the code base, the following methods are implemented in `math.linear.ts`.
+### Class: `Vector3`
+Vectors in ${\reals^3}$ are represented by a `Vector3` object. We construct a new `Vector3` with the `v3` function:
+
+~~~ts
+const v = v3(1,2,3);
+~~~
+
+Above, the vector `v` corresponds to the ${\reals^3}$ vector ${[1,2,3].}$ Where ${v}$ is some instance of `Vector3`, ${v}$ comprises the following properties:
+
+| Property                           | Semantic                               |
+| ---------------------------------- | -------------------------------------- |
+| ${v.\texttt{\text{\textdollar}x}}$ | ${v_x,}$ the ${x}$-component of ${v.}$ |
+| ${v.\texttt{\text{\textdollar}y}}$ | ${v_y,}$ the ${y}$-component of ${v.}$ |
+| ${v.\texttt{\text{\textdollar}z}}$ | ${v_z,}$ the ${z}$-component of ${v.}$ |
+
+#### 𝑢.add(𝑣: `Vector3`)
+Let ${u}$ and ${v}$ be instances of `Vector3`. Then ${u.\texttt{add}(v)}$ returns the vector sum ${u + v.}$ 
+
+
+## Number Systems
+### Scientific Numbers
+Scientific numbers are represented by a `Scinum` object. All `Scinum` objects have two properties: (1) the `$base` and the (2) the `$exponent`.
+
 
 
 

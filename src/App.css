@@ -3,9 +3,15 @@
   font-size: 14px;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 body {
   overflow-y: hidden;
+  font-family: "KaTeX_main";
 }
+
 
 nav {
   position: absolute;
@@ -14,10 +20,12 @@ nav {
 }
 
 main {
-  height: 90vh;
-  padding: 1em;
+  height: 95vh;
+  width: 100vw;
+  padding: 10vh 20vw;
+  padding-bottom: 30vh;
   position: absolute;
-  top: 40px;
+  top: 35px;
   overflow-y: auto;
 }
 
@@ -41,6 +49,11 @@ nav a {
   margin: 0 1em;
 }
 
+h1 {
+  text-align: center;
+  padding: 1em;
+}
+
 h1,
 h2,
 h3,
@@ -48,9 +61,29 @@ h4,
 h5,
 h6 {
   margin: 0;
+  /* font-family: 'Courier New', Courier, monospace; */
+}
+
+code {
+  font-family: "KaTeX_Typewriter";
+}
+
+pre {
+  border-left: solid 4px lightgrey;
+  padding-left: 1em;
 }
 
 p {
   padding-top: 0;
   margin-top: 0;
+}
+
+table {
+  border: solid thin lightgrey;
+  border-collapse: collapse;
+  margin: 1em auto;
+}
+table td, table th {
+  border: solid thin lightgrey;
+  padding: 2px;
 }

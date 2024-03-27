@@ -93,7 +93,7 @@ export const treed = (obj: Object) => {
 /**
  * Logs the given `x` to the console.
  */
-const show = (x: any) => {
+export const show = (x: any) => {
   if (Array.isArray(x)) {
     console.log(x);
   } else if (typeof x === "object") {
@@ -104,9 +104,7 @@ const show = (x: any) => {
   return x;
 };
 
-// == Integer Object
-
-// ============================================================ Type Guards
+// ===================================================================== Typings
 /**
  * Returns true if the given `x` is a JavaScript number,
  * false otherwise. This function will return false if `x` is
@@ -204,6 +202,12 @@ export const right = <T>(x: T): Right<T> => new Right(x);
  */
 export type Either<A, B> = Left<A> | Right<B>;
 
+/** A mixin type alias. */
+type Constructor<T = {}> = new (...args: any[]) => T;
+
+/** An alias for a mixin of classes `A` and `B`. */
+type MixOf<A, B> = A & Constructor<B>;
+
 // ================================================================== Set Theory
 
 /** Returns a tuple. */
@@ -211,12 +215,16 @@ export const tuple = <T extends any[]>(...data: T) => data;
 
 // ============================================================ Numeric Analysis
 /**
- * The value of the largest integer n such that 
- * n and n + 1 are both exactly 
+ * The value of the largest integer n such that
+ * n and n + 1 are both exactly
  * representable as a Number value (i.e.,
  * `9,007,199,254,740,991`).
  */
 export const MAX_INT = Number.MAX_SAFE_INTEGER;
+/**
+ * The largest number that can be represented
+ * in JavaScript (approx. `1.79E+308`).
+ */
 export const MAX_FLOAT = Number.MAX_VALUE;
 /**
  * Returns the number between `x` and `y` at the specified increment `a`.
@@ -389,3 +397,57 @@ export enum BP {
   POSTFIX,
   CALL,
 }
+
+/** An object corresponding to a scientific number. */
+class Scinum {
+  $base: number;
+  $exponent: number;
+  constructor(base: number, exponent: number) {
+    this.$base = base;
+    this.$exponent = exponent;
+  }
+}
+
+/** Returns a new scientific number. */
+const scinum = (base: number, exponent: number) => (
+  new Scinum(base, exponent)
+);
+
+/** A vector in R^3. */
+class Vector3 {
+  $x: number;
+  $y: number;
+  $z: number;
+  constructor(x: number, y: number, z: number) {
+    this.$x = x;
+    this.$y = y;
+    this.$z = z;
+  }
+  /**
+   * Returns a new Vector3 corresponding to this
+   * Vector3 negated.
+   */
+  neg() {
+    return new Vector3(
+      -this.$x,
+      -this.$y,
+      -this.$z
+    )
+  }
+  /**
+   * Returns a new Vector3 corresponding to the
+   * sum of this vector and the provided vector.
+   */
+  add(vector3: Vector3) {
+    return new Vector3(
+      this.$x + vector3.$x,
+      this.$y + vector3.$y,
+      this.$z + vector3.$z,
+    );
+  }
+}
+
+/** Returns a new 3D vector. */
+const v3 = (x: number, y: number, z: number) => (
+  new Vector3(x, y, z)
+);

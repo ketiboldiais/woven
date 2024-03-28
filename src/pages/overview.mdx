@@ -39,6 +39,9 @@ __Specific Aims.__ (1) Providing a symbolic computation API; (2) providing a 2D 
 6. [Linear Algebra](#linear-algebra)
 	1. [Class: `Vector3`](#class-vector3)
 		1. [𝑢.add(𝑣: `Vector3`)](#𝑢add𝑣-vector3)
+		2. [𝑢.neg()](#𝑢neg)
+		3. [𝑢.sub(𝑣: `Vector3`)](#𝑢sub𝑣-vector3)
+		4. [𝑢.smul(𝑠: `number`)](#𝑢smul𝑠-number)
 7. [Number Systems](#number-systems)
 	1. [Scientific Numbers](#scientific-numbers)
 
@@ -159,6 +162,15 @@ Above, the vector `v` corresponds to the ${\reals^3}$ vector ${[1,2,3].}$ Where 
 
 #### 𝑢.add(𝑣: `Vector3`)
 Let ${u}$ and ${v}$ be instances of `Vector3`. Then ${u.\texttt{add}(v)}$ returns the vector sum ${u + v.}$ 
+
+#### 𝑢.neg()
+Given a `Vector3` ${u,}$ returns the negation of ${u.}$ That is, ${-u.}$
+
+#### 𝑢.sub(𝑣: `Vector3`)
+Let ${u}$ and ${v}$ be instances of `Vector3`. Then ${u.\texttt{sub}(v)}$ returns the vector sum ${u - v.}$ 
+
+#### 𝑢.smul(𝑠: `number`)
+Let ${u}$ be an instance of a `Vector3` and ${s}$ a JavaScript number. Then ${u.\texttt{smul}(s)}$ corresponds to multiplying each component of ${v}$ by the given number ${s.}$
 
 
 ## Number Systems

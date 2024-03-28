@@ -445,7 +445,59 @@ class Vector3 {
       this.$z + vector3.$z,
     );
   }
+
+  /**
+   * Returns a new Vector3 corresponding to
+   * the sum of this vector and the provided vector.
+   */
+  sub(vector3: Vector3) {
+    return new Vector3(
+      this.$x - vector3.$x,
+      this.$y - vector3.$y,
+      this.$z - vector3.$z,
+    )
+  }
+
+  /**
+   * Returns a new Vector3 corresponding
+   * to multiplying each component of this
+   * vector by the given `scalar`.
+   */
+  smul(scalar:number) {
+    return new Vector3(
+      this.$x * scalar,
+      this.$y * scalar,
+      this.$z * scalar,
+    )
+  }
+
+  /**
+   * Returns a new Vector3 corresponding
+   * to dividing each component of this
+   * vector by the given `scalar`. If the
+   * `scalar` is `0`, then the value `0.0001`
+   * is used.
+   */
+  sdiv(scalar:number) {
+    const k = scalar === 0 ? 0.0001 : scalar;
+    return new Vector3(
+      this.$x / k,
+      this.$y / k,
+      this.$z / k,
+    )
+  }
+
+  /** Returns a new Vector3.  */
+  dot(vector3: Vector3) {
+    return (
+      this.$x * vector3.$x +
+      this.$y * vector3.$y +
+      this.$z * vector3.$z
+    )
+  }
 }
+
+
 
 /** Returns a new 3D vector. */
 const v3 = (x: number, y: number, z: number) => (
